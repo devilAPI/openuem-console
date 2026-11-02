@@ -145,7 +145,7 @@ func (h *Handler) SelectPackageDeployment(c echo.Context) error {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "packages.required_params_missing"), false))
 	}
 
-	if packageBrewType != "" && !slices.Contains([]string{"cask,formula"}, packageBrewType) {
+	if packageBrewType != "" && !slices.Contains([]string{"cask", "formula"}, packageBrewType) {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "packages.wrong_brew_type"), false))
 	}
 
@@ -234,7 +234,7 @@ func (h *Handler) DeployPackageToSelectedAgents(c echo.Context) error {
 	packageVerified := c.FormValue("filterByPackageVerified")
 	installParam := c.FormValue("filterByInstallationType")
 
-	if packageBrewType != "" && !slices.Contains([]string{"cask,formula"}, packageBrewType) {
+	if packageBrewType != "" && !slices.Contains([]string{"cask", "formula"}, packageBrewType) {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "packages.wrong_brew_type"), false))
 	}
 
