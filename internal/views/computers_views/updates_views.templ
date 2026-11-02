@@ -19,7 +19,6 @@ templ ComputerUpdates(c echo.Context, p partials.PaginationAndSort, agent *ent.A
 				@partials.ComputerHeader(p, agent, commonInfo, offline)
 				@ComputersNavbar(agent.ID, "deploy", agent.VncProxyPort, false, commonInfo, agent.Os, netbird, agent.Edges.Release.Version)
 				<div id="error" class="hidden"></div>
-				<div id="success" class="hidden"></div>
 				<div class="uk-card uk-card-default">
 					<div class="uk-card-header">
 						<div class="flex justify-between items-center">

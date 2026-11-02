@@ -558,6 +558,7 @@ en:
     requested: "The agent has started updating the packages"
     no_packages_selected: "Select at least one package to update"
     agent_not_reachable: "The agent couldn't be reached, it may be offline or its version may not support software updates yet"
+    agent_timeout: "The agent didn't answer in time, it may still be checking for updates, try again later"
   computers:
     description: "This is the inventory of computers for your organization reported by the agents that have contacted the server"
     filter_by_username: "Filter by username..."

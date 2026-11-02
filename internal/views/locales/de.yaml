@@ -558,6 +558,7 @@ de:
     requested: "Der Agent hat mit der Aktualisierung der Pakete begonnen"
     no_packages_selected: "Wählen Sie mindestens ein Paket zum Aktualisieren aus"
     agent_not_reachable: "Der Agent ist nicht erreichbar. Möglicherweise ist er offline oder seine Version unterstützt Softwareupdates noch nicht"
+    agent_timeout: "Der Agent hat nicht rechtzeitig geantwortet. Möglicherweise sucht er noch nach Updates, versuchen Sie es später erneut"
   computers:
     description: "Dies ist das Inventar der Computer für Ihre Organisation, das von den Agenten gemeldet wurde, die den Server kontaktiert haben"
     filter_by_username: "Nach Benutzername filtern..."

@@ -558,6 +558,7 @@ es:
     requested: "El agente ha empezado a actualizar los paquetes"
     no_packages_selected: "Seleccione al menos un paquete para actualizar"
     agent_not_reachable: "No se ha podido contactar con el agente, puede que esté desconectado o que su versión aún no admita actualizaciones de software"
+    agent_timeout: "El agente no ha respondido a tiempo, puede que aún esté buscando actualizaciones, inténtelo de nuevo más tarde"
   computers:
     description: "Este es el inventario de equipos de su organización comunicado por los agentes que han contactado con el servidor OpenUEM"
     filter_by_username: "Filtrar por nombre de usuario..."

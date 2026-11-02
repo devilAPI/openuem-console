@@ -19,7 +19,7 @@ import (
 
 const (
 	// Listing updates can take a while: winget runs as SYSTEM and in every user session
-	listPackageUpdatesTimeout = 5 * time.Minute
+	listPackageUpdatesTimeout = 10 * time.Minute
 	// Agents answer as soon as an update run starts
 	updatePackagesTimeout = 10 * time.Second
 	// Maximum number of agents asked to update packages at the same time
@@ -42,16 +42,27 @@ func (h *Handler) UpdateAllPackagesOnAgents(c echo.Context, agentIDs []string, c
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "nats.not_connected"), false))
 	}
 
-	failures := []deploy_views.UpdateRequestFailure{}
-	for agentID, err := range h.requestPackageUpdates(agentIDs, nil) {
-		failure := deploy_views.UpdateRequestFailure{Computer: agentID, Reason: updateRequestErrorMessage(c, err)}
-		if agent, err := h.Model.GetAgentById(agentID, commonInfo); err == nil {
-			failure.Computer = agent.Nickname
+	// Only agents of the current organization and site can be asked
+	nicknames := map[string]string{}
+	allowed := []string{}
+	for _, agentID := range agentIDs {
+		agent, err := h.Model.GetAgentById(agentID, commonInfo)
+		if err != nil {
+			continue
 		}
-		failures = append(failures, failure)
+		nicknames[agentID] = agent.Nickname
+		allowed = append(allowed, agentID)
+	}
+	if len(allowed) == 0 {
+		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "agents.no_selected_agents_to_deploy"), true))
 	}
 
-	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.UpdateAllRequested(c, len(agentIDs)-len(failures), failures, commonInfo), commonInfo))
+	failures := []deploy_views.UpdateRequestFailure{}
+	for agentID, err := range h.requestPackageUpdates(allowed, nil) {
+		failures = append(failures, deploy_views.UpdateRequestFailure{Computer: nicknames[agentID], Reason: updateRequestErrorMessage(c, err)})
+	}
+
+	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.UpdateAllRequested(c, len(allowed)-len(failures), failures, commonInfo), commonInfo))
 }
 
 // requestPackageUpdates asks several agents, concurrently, to start an update run. It returns
@@ -106,8 +117,10 @@ func (h *Handler) requestAgentPackageUpdates(agentID string, packages []openuem_
 func updateRequestErrorMessage(c echo.Context, err error) string {
 	var refused errAgentUpdateRefused
 	switch {
-	case errors.Is(err, nats.ErrNoResponders), errors.Is(err, nats.ErrTimeout):
+	case errors.Is(err, nats.ErrNoResponders):
 		return i18n.T(c.Request().Context(), "package_updates.agent_not_reachable")
+	case errors.Is(err, nats.ErrTimeout):
+		return i18n.T(c.Request().Context(), "package_updates.agent_timeout")
 	case errors.As(err, &refused):
 		return refused.reason
 	default:
@@ -152,9 +165,19 @@ func (h *Handler) ComputerListUpdates(c echo.Context) error {
 
 // ComputerUpdatePackages asks the agent to update the selected packages, or every package if none is selected
 func (h *Handler) ComputerUpdatePackages(c echo.Context) error {
+	commonInfo, err := h.GetCommonInfo(c)
+	if err != nil {
+		return err
+	}
+
 	agentID := c.Param("uuid")
 	if agentID == "" {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "agents.no_empty_id"), false))
+	}
+
+	// The agent must belong to the current organization and site
+	if _, err := h.Model.GetAgentById(agentID, commonInfo); err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
 	}
 
 	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
@@ -197,6 +220,11 @@ func (h *Handler) renderComputerAvailableUpdates(c echo.Context, successMessage 
 	agentID := c.Param("uuid")
 	if agentID == "" {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "agents.no_empty_id"), false))
+	}
+
+	// The agent must belong to the current organization and site
+	if _, err := h.Model.GetAgentById(agentID, commonInfo); err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
 	}
 
 	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
