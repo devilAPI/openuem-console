@@ -557,7 +557,7 @@ no:
     status_updated: "Oppdatert"
     requested: "Agenten har begynt å oppdatere pakkene"
     no_packages_selected: "Velg minst én pakke å oppdatere"
-    agent_not_reachable: "Agenten kunne ikke nås, den kan være frakoblet"
+    agent_not_reachable: "Agenten kunne ikke nås, den kan være frakoblet eller versjonen støtter kanskje ikke programvareoppdateringer ennå"
   computers:
     description: "Dette er inventaret over datamaskiner for din organisasjon rapportert av agentene som har kontaktet serveren"
     filter_by_username: "Filtrer etter brukernavn..."

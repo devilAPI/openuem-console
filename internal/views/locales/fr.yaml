@@ -557,7 +557,7 @@ fr:
     status_updated: "Mis à jour"
     requested: "L'agent a commencé à mettre à jour les paquets"
     no_packages_selected: "Sélectionnez au moins un paquet à mettre à jour"
-    agent_not_reachable: "L'agent est injoignable, il est peut-être hors ligne"
+    agent_not_reachable: "L'agent est injoignable, il est peut-être hors ligne ou sa version ne prend pas encore en charge les mises à jour logicielles"
   computers:
     description: "Il s'agit de l'inventaire des ordinateurs de votre organisation, tel que rapporté par les agents qui ont contacté le serveur"
     filter_by_username: "Filtrer par nom d'utilisateur..."

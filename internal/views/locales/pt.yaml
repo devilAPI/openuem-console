@@ -557,7 +557,7 @@ pt:
     status_updated: "Atualizado"
     requested: "O agente começou a atualizar os pacotes"
     no_packages_selected: "Selecione pelo menos um pacote para atualizar"
-    agent_not_reachable: "Não foi possível contactar o agente, pode estar offline"
+    agent_not_reachable: "Não foi possível contactar o agente, pode estar offline ou a sua versão pode ainda não suportar atualizações de software"
   computers:
     description: "Este é o inventário de computadores da sua organização relatado pelos agentes que entraram em contato com o servidor"
     filter_by_username: "Filtrar por nome de usuário..."

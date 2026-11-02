@@ -557,7 +557,7 @@ en:
     status_updated: "Updated"
     requested: "The agent has started updating the packages"
     no_packages_selected: "Select at least one package to update"
-    agent_not_reachable: "The agent couldn't be reached, it may be offline"
+    agent_not_reachable: "The agent couldn't be reached, it may be offline or its version may not support software updates yet"
   computers:
     description: "This is the inventory of computers for your organization reported by the agents that have contacted the server"
     filter_by_username: "Filter by username..."

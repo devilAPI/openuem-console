@@ -557,7 +557,7 @@ ca:
     status_updated: "Actualitzat"
     requested: "L'agent ha començat a actualitzar els paquets"
     no_packages_selected: "Seleccioneu almenys un paquet per actualitzar"
-    agent_not_reachable: "No s'ha pogut contactar amb l'agent, pot ser que estigui desconnectat"
+    agent_not_reachable: "No s'ha pogut contactar amb l'agent, pot ser que estigui desconnectat o que la seva versió encara no admeti actualitzacions de programari"
   computers:
     description: "Aquest és l'inventari d'ordinadors de la vostra organització informat pels agents que han contactat amb el servidor"
     filter_by_username: "Filtra per nom d'usuari..."
