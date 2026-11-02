@@ -106,7 +106,7 @@ templ AvailableUpdates(agentId string, response *openuem_nats.AvailableUpdatesRe
 				@updatesSpinner()
 			</div>
 			if response.Error != "" {
-				<div class="uk-alert border-yellow-600 bg-yellow-50 text-yellow-900">
+				<div class="uk-alert text-orange-600">
 					<div class="uk-alert-description uk-text-small">{ i18n.T(ctx, "package_updates.list_error", response.Error) }</div>
 				</div>
 			}
@@ -252,11 +252,11 @@ templ updateRunResults(run *openuem_nats.UpdateRun) {
 							@updateScope(r.AvailableUpdate)
 						</td>
 						<td class="!align-middle">
-							switch {
+							switch  {
 								case r.Failed:
 									<span class="text-red-600">{ i18n.T(ctx, "package_updates.status_failed") }</span>
 									if r.Info != "" {
-										<pre class="uk-text-small whitespace-pre-wrap max-w-xl">{ r.Info }</pre>
+										<p class="uk-text-small uk-text-muted">{ r.Info }</p>
 									}
 								case r.UpToDate:
 									<span class="uk-text-muted">{ i18n.T(ctx, "package_updates.status_up_to_date") }</span>

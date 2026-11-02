@@ -33,6 +33,14 @@ func searchPath(action string) string {
 	return "/deploy/search" + action
 }
 
+// selectAgentsPath returns the path of the page where agents are selected for an action
+func selectAgentsPath(action string) string {
+	if action == ActionUpdateAll {
+		return actionPath(ActionUpdateAll)
+	}
+	return "/deploy/selectpackagedeployment"
+}
+
 // actionTitle returns the translation key of the title of an action
 func actionTitle(action string) string {
 	switch action {

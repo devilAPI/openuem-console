@@ -239,7 +239,7 @@ templ SelectPackageDeployment(c echo.Context, p partials.PaginationAndSort, f fi
 					</div>
 					<div class="uk-card-body mt-8 mb-2">
 						<div class="flex items-center gap-4">
-							@filters.ClearFilters(string(templ.URL(partials.GetNavigationUrl(commonInfo, "/deploy/selectpackagedeployment"))), "#main", "outerHTML", func() bool {
+							@filters.ClearFilters(string(templ.URL(partials.GetNavigationUrl(commonInfo, selectAgentsPath(action)))), "#main", "outerHTML", func() bool {
 								return f.Nickname == "" && len(f.Versions) == 0 && len(f.AgentOSVersions) == 0 && len(f.Tags) == 0
 							})
 							if len(agents) > 0 {
