@@ -9,8 +9,10 @@
 # Settings can be given as environment variables, e.g.:
 #   curl -fsSL ... | OPENUEM_DOMAIN=uem.example.org ORG_NAME="ACME" ORG_COUNTRY=DE bash
 #
-# Running the script again updates the fork: it pulls the branch, rebuilds the
-# console image and restarts the console. Existing settings and certificates are kept.
+# Running the script again on an existing installation updates it: the official
+# containers are pulled again, the fork's branches are pulled, the console image and
+# the agents are rebuilt and the console is restarted. The settings (.env), the
+# certificates and the database are kept; settings added upstream are appended to .env.
 
 set -euo pipefail
 
@@ -102,6 +104,11 @@ fi
 
 FIRST_INSTALL=0
 [ -f "$INSTALL_DIR/.env" ] || FIRST_INSTALL=1
+if [ "$FIRST_INSTALL" = "1" ]; then
+    info "Installing OpenUEM in $INSTALL_DIR"
+else
+    info "Existing installation found in $INSTALL_DIR, updating it"
+fi
 
 if [ "$FIRST_INSTALL" = "1" ]; then
     [ -n "$SERVER_IP" ] || SERVER_IP="$(hostname -I | awk '{print $1}')"
@@ -178,6 +185,21 @@ else
     info "Keeping the existing $INSTALL_DIR/.env"
     OPENUEM_DOMAIN="$(get_env OPENUEM_DOMAIN)"
     [ -n "$SERVER_IP" ] || SERVER_IP="$(hostname -I | awk '{print $1}')"
+
+    # Settings introduced upstream since the installation get their default value
+    while IFS= read -r line; do
+        key="${line%%=*}"
+        if ! grep -q "^${key}=" "$INSTALL_DIR/.env"; then
+            printf '%s\n' "$line" >>"$INSTALL_DIR/.env"
+            printf 'Added new setting %s\n' "$key"
+        fi
+    done < <(grep -E '^[A-Z_][A-Z0-9_]*=' "$INSTALL_DIR/.env-example")
+
+    # The reset flag would reset the openuem user on every restart
+    if [ "$(get_env CONSOLE_RESET_OPENUEM_USER)" = "true" ]; then
+        set_env CONSOLE_RESET_OPENUEM_USER ""
+        warn "CONSOLE_RESET_OPENUEM_USER was set, it has been cleared"
+    fi
 fi
 
 CONSOLE_PORT="$(get_env CONSOLE_PORT)"
@@ -243,6 +265,12 @@ if [ ! -f certificates/users/admin.pfx ] || [ ! -f nats/nats.cfg ]; then
     fi
 fi
 
+if [ "$FIRST_INSTALL" = "0" ]; then
+    info "Pulling the latest official images"
+    mapfile -t official_services < <(docker compose config --services | grep -vx console)
+    docker compose pull --ignore-pull-failures --quiet "${official_services[@]}" || warn "some images could not be pulled"
+fi
+
 info "Starting OpenUEM"
 docker compose up -d --remove-orphans
 # The image tag doesn't change when the fork is rebuilt, so make sure the new image is used
@@ -277,6 +305,43 @@ if [ "$BUILD_AGENTS" = "1" ]; then
 fi
 
 # ----------------------------------------------------------------------------
+# Password login
+# ----------------------------------------------------------------------------
+# Helper to set a new password for the built-in openuem user
+cat >"$INSTALL_DIR/reset-openuem-password.sh" <<'RESET_EOF'
+#!/usr/bin/env bash
+# Sets a new random password for the openuem user, re-enables password logins and prints it
+set -euo pipefail
+cd "$(dirname "$0")"
+sed -i 's/^CONSOLE_RESET_OPENUEM_USER=.*/CONSOLE_RESET_OPENUEM_USER=true/; s/^CONSOLE_RE_ENABLE_PASSWD_AUTH=.*/CONSOLE_RE_ENABLE_PASSWD_AUTH=true/' .env
+since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+docker compose up -d --force-recreate console
+password=""
+for _ in $(seq 1 30); do
+    password="$(docker compose logs --since "$since" console 2>/dev/null | sed -n 's/.*initial password for the openuem user account is: //p' | tail -n1 | tr -d '\r')"
+    [ -n "$password" ] && break
+    sleep 2
+done
+# Don't reset the user again on the next restart
+sed -i 's/^CONSOLE_RESET_OPENUEM_USER=.*/CONSOLE_RESET_OPENUEM_USER=/' .env
+docker compose up -d console >/dev/null
+[ -n "$password" ] || { echo "The new password wasn't found in the console log, see: docker compose logs console" >&2; exit 1; }
+printf 'User:     openuem\nPassword: %s\nYou must change it at the first login.\n' "$password"
+RESET_EOF
+chmod 700 "$INSTALL_DIR/reset-openuem-password.sh"
+
+# The console creates the openuem user with a random password on its first start
+# and only writes it to its log
+OPENUEM_PASSWORD=""
+if [ "$FIRST_INSTALL" = "1" ]; then
+    for _ in $(seq 1 30); do
+        OPENUEM_PASSWORD="$(docker compose logs console 2>/dev/null | sed -n 's/.*initial password for the openuem user account is: //p' | tail -n1 | tr -d '\r')"
+        [ -n "$OPENUEM_PASSWORD" ] && break
+        sleep 2
+    done
+fi
+
+# ----------------------------------------------------------------------------
 # Summary
 # ----------------------------------------------------------------------------
 cat <<EOF
@@ -284,9 +349,19 @@ cat <<EOF
 $(printf '\033[1;32m')OpenUEM is running with the console from ${CONSOLE_REPO} (${CONSOLE_BRANCH} @ ${CONSOLE_COMMIT})$(printf '\033[0m')
 
 Console:          https://console.${OPENUEM_DOMAIN}:${CONSOLE_PORT}
-Admin certificate: ${INSTALL_DIR}/certificates/users/admin.pfx (password: changeit)
-                  Import it into your browser to log in to the console.
+
+Log in with a password:
+  User:           openuem
+  Password:       ${OPENUEM_PASSWORD:-the one you set at your first login}
+  New password:   ${INSTALL_DIR}/reset-openuem-password.sh
+
+Or log in with the admin certificate:
+  ${INSTALL_DIR}/certificates/users/admin.pfx (password: changeit)
+  Import it into your browser and choose it when the browser asks. The login
+  uses port ${CONSOLE_AUTH_PORT}; restart Firefox after importing it.
+
 CA certificate:   ${INSTALL_DIR}/certificates/ca/ca.cer
+                  Import it as a trusted root CA to avoid browser warnings.
 
 Ports your computers and browser must reach on ${SERVER_IP}:
   ${CONSOLE_PORT}/tcp (console), ${CONSOLE_AUTH_PORT}/tcp (console login), ${NATS_PORT}/tcp (NATS), ${OCSP_PORT}/tcp (OCSP)
@@ -295,15 +370,26 @@ DNS: console.${OPENUEM_DOMAIN}, nats.${OPENUEM_DOMAIN} and ocsp.${OPENUEM_DOMAIN
      must resolve to ${SERVER_IP} on every computer and in your browser.
 
 Logs:      cd ${INSTALL_DIR} && docker compose logs -f console
-Update:    run this script again
+Update:    run this script again (settings, certificates and data are kept)
 Rollback:  rm ${INSTALL_DIR}/compose.override.yml && cd ${INSTALL_DIR} && docker compose up -d
+
+New features of the fork:
+  Deploy > Update                     update one package on selected computers
+  Deploy > Update all software        update everything on selected computers
+  Computers > (computer) > Deploy >
+    Software updates                  list a computer's updates, update some or all
 EOF
 
 if [ -n "$AGENTS_DIR" ]; then
     cat <<EOF
 
 Agent binaries built from the fork: ${INSTALL_DIR}/agent-builds/latest/
-  Install the official OpenUEM agent on a computer first, then replace its binary:
+  Windows, all in one step (PowerShell as administrator, on a computer without
+  Defender ASR policies that block unsigned programs). Run it again to update:
+    Set-ExecutionPolicy -Scope Process Bypass -Force; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1))) -ServerIP ${SERVER_IP} -Domain ${OPENUEM_DOMAIN}
+    Add -SshPort <port> if SSH doesn't listen on port 22.
+
+  Or install the official OpenUEM agent first, then replace its binary:
   Windows (PowerShell as administrator):
     Stop-Service openuem-agent
     # the path is shown by: sc.exe qc openuem-agent

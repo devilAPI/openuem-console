@@ -8,6 +8,8 @@
     3. Downloads and silently installs the official OpenUEM agent
     4. Replaces the agent binary with the fork's build
 
+    Run it again to update the agent to the latest build on the server.
+
     Run in PowerShell as administrator:
       powershell -ExecutionPolicy Bypass -File .\install-openuem-agent-fork.ps1
 
@@ -103,7 +105,7 @@ Remove-Item (Join-Path $WorkDir "certificates"), (Join-Path $WorkDir "agent-buil
 # --- Official agent -----------------------------------------------------------
 $service = Get-Service openuem-agent -ErrorAction SilentlyContinue
 if ($service) {
-    Write-Step "The OpenUEM agent is already installed, skipping the installer"
+    Write-Step "The OpenUEM agent is already installed, updating it to the latest build on the server"
 } else {
     $setup = Join-Path $WorkDir "openuem-agent-setup.exe"
     Write-Step "Downloading the official OpenUEM agent $AgentVersion"
