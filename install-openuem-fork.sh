@@ -265,6 +265,20 @@ if [ ! -f certificates/users/admin.pfx ] || [ ! -f nats/nats.cfg ]; then
     fi
 fi
 
+# NATS only lets agents subscribe to an explicit list of subjects, the fork's agent
+# needs two more to list available updates and to start bulk update runs
+NATS_CONFIG_CHANGED=0
+for subject in listpackageupdates updatepackages; do
+    grep -q "\"agent.${subject}.> openuem-agent-management\"" nats/nats.cfg && continue
+    if grep -q '"agent.runprofile.> openuem-agent-management"' nats/nats.cfg; then
+        sed -i "s|\"agent.runprofile.> openuem-agent-management\"|&, \"agent.${subject}.> openuem-agent-management\"|" nats/nats.cfg
+        NATS_CONFIG_CHANGED=1
+        printf 'Allowed agents to subscribe to agent.%s in nats/nats.cfg\n' "$subject"
+    else
+        warn "could not allow agent.${subject} in nats/nats.cfg, software updates won't work until it's added to the agent's subscribe permissions"
+    fi
+done
+
 if [ "$FIRST_INSTALL" = "0" ]; then
     info "Pulling the latest official images"
     mapfile -t official_services < <(docker compose config --services | grep -vx console)
@@ -275,6 +289,10 @@ info "Starting OpenUEM"
 docker compose up -d --remove-orphans
 # The image tag doesn't change when the fork is rebuilt, so make sure the new image is used
 [ "$FIRST_INSTALL" = "1" ] || docker compose up -d --force-recreate console
+# NATS reads its configuration only when it starts; agents reconnect on their own
+if [ "$NATS_CONFIG_CHANGED" = "1" ] && [ "$FIRST_INSTALL" = "0" ]; then
+    docker compose restart nats-server
+fi
 
 for _ in $(seq 1 30); do
     [ "$(docker inspect -f '{{.State.Running}}' openuem-console 2>/dev/null)" = "true" ] && break
