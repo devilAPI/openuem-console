@@ -44,6 +44,12 @@ $ProgressPreference = "SilentlyContinue"
 
 function Write-Step($message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
 
+# -Domain is the base domain; accept a host name like nats.<domain> too
+if ($Domain -match '^(console|nats|ocsp)\.(.+\..+)$') {
+    Write-Warning "-Domain must be the base domain, using $($Matches[2]) instead of $Domain"
+    $Domain = $Matches[2]
+}
+
 # --- Checks -------------------------------------------------------------------
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
