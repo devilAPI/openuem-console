@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -87,6 +88,8 @@ func SanitizeName(name string) string {
 // Store keeps the uploaded files in a directory
 type Store struct {
 	dir string
+	// mu prevents the cleanup from removing directories while a file is saved
+	mu sync.Mutex
 }
 
 // New creates the store, creating its directory if needed
@@ -104,6 +107,9 @@ func (s *Store) Save(profileID int, name string, src io.Reader) (File, error) {
 	if profileID <= 0 || name == "" {
 		return File{}, ErrInvalidFile
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	profileDir := filepath.Join(s.dir, strconv.Itoa(profileID))
 	if err := os.MkdirAll(profileDir, 0o700); err != nil {
@@ -155,6 +161,9 @@ func (s *Store) path(f File) string {
 // RemoveUnused deletes the files that no task uses anymore. Files uploaded during the
 // grace period are kept, as the task using them may not have been saved yet.
 func (s *Store) RemoveUnused(used map[File]bool, grace time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	profiles, err := os.ReadDir(s.dir)
 	if err != nil {
 		return err
@@ -173,6 +182,15 @@ func (s *Store) RemoveUnused(used map[File]bool, grace time.Duration) error {
 		}
 		for _, hash := range hashes {
 			hashDir := filepath.Join(profileDir, hash.Name())
+
+			// Temporary files of uploads that were interrupted
+			if !hash.IsDir() && strings.HasPrefix(hash.Name(), ".upload-") {
+				if info, err := hash.Info(); err == nil && time.Since(info.ModTime()) >= grace {
+					_ = os.Remove(hashDir)
+				}
+				continue
+			}
+
 			files, err := os.ReadDir(hashDir)
 			if err != nil || !hash.IsDir() {
 				continue

@@ -537,6 +537,7 @@ fr:
     queued_title: "%d ordinateurs sont hors ligne"
     queued_description: "Ils mettront à jour tous leurs logiciels dès qu'ils se reconnecteront. Les demandes qui attendent plus de 30 jours sont abandonnées."
     show_status: "Afficher l'état des mises à jour"
+    not_queued: "L'ordinateur est hors ligne et son agent ne peut pas encore recevoir de mises à jour en file d'attente. Mettez l'agent à jour pendant que l'ordinateur est en ligne."
   updatestatus:
     tab: "État des mises à jour"
     title: "État des mises à jour logicielles"

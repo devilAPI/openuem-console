@@ -537,6 +537,7 @@ no:
     queued_title: "%d datamaskiner er frakoblet"
     queued_description: "De oppdaterer all programvaren sin så snart de kobler til igjen. Forespørsler som venter i mer enn 30 dager, forkastes."
     show_status: "Vis oppdateringsstatus"
+    not_queued: "Datamaskinen er frakoblet, og agenten kan ennå ikke motta oppdateringer i kø. Oppdater agenten mens datamaskinen er tilkoblet."
   updatestatus:
     tab: "Oppdateringsstatus"
     title: "Status for programvareoppdateringer"

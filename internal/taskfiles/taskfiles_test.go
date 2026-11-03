@@ -2,6 +2,7 @@ package taskfiles
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,9 +80,15 @@ func TestRemoveUnused(t *testing.T) {
 	_, err = store.Path(unused)
 	assert.NoError(t, err)
 
+	// Temporary files of interrupted uploads are removed too
+	stale := filepath.Join(store.dir, "1", ".upload-123")
+	require.NoError(t, os.WriteFile(stale, []byte("partial"), 0o600))
+
 	require.NoError(t, store.RemoveUnused(map[File]bool{used: true}, 0))
 	_, err = store.Path(unused)
 	assert.ErrorIs(t, err, ErrNotFound)
 	_, err = store.Path(used)
 	assert.NoError(t, err)
+	_, err = os.Stat(stale)
+	assert.True(t, os.IsNotExist(err))
 }

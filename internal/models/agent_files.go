@@ -55,6 +55,15 @@ func (m *Model) ProfileAppliesToAgent(profileID int, agentID string) (bool, erro
 	).Exist(context.Background())
 }
 
+// ProfilesUsingTaskFile returns the profiles with MSI tasks whose path is the given
+// uploaded file, e.g. tasks cloned into another profile
+func (m *Model) ProfilesUsingTaskFile(urlPath string) ([]int, error) {
+	return m.Client.Task.Query().
+		Where(task.TypeIn(task.TypeMsiInstall, task.TypeMsiUninstall), task.MsiPathHasSuffix(urlPath)).
+		QueryProfile().
+		IDs(context.Background())
+}
+
 // GetTaskFilePaths returns the paths of the MSI tasks, used to find the uploaded files
 // that are still in use
 func (m *Model) GetTaskFilePaths() ([]string, error) {

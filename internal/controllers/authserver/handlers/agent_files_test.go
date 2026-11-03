@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
 	"math/big"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/open-uem/ent/agent"
 	"github.com/open-uem/ent/enttest"
+	"github.com/open-uem/ent/task"
 	"github.com/open-uem/openuem-console/internal/models"
 	"github.com/open-uem/openuem-console/internal/taskfiles"
 	"github.com/stretchr/testify/assert"
@@ -121,4 +123,36 @@ func TestAgentFile(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, code)
 	code, _ = download(agentCert, "agent1", taskfiles.File{ProfileID: profile.ID, Hash: file.Hash, Name: "../app.msi"})
 	assert.Equal(t, http.StatusNotFound, code)
+
+	// A task cloned into another profile can use the file for that profile's agents
+	site2 := client.Site.Create().SetDescription("Site 2").SetTenant(tenant).SaveX(ctx)
+	client.Agent.Create().SetID("agent3").SetHostname("pc3").SetOs("windows").SetNickname("pc3").
+		SetAgentStatus(agent.AgentStatusEnabled).AddSite(site2).ExecX(ctx)
+	profile2 := client.Profile.Create().SetName("Site 2").SetApplyToAll(true).AddSite(site2).SaveX(ctx)
+	code, _ = download(agentCert, "agent3", file)
+	assert.Equal(t, http.StatusForbidden, code, "agent of another profile without a task using the file")
+	client.Task.Create().SetName("Install app").SetType(task.TypeMsiInstall).SetMsiPath("https://console.example.com:1324" + file.URLPath()).SetProfile(profile2).ExecX(ctx)
+	code, _ = download(agentCert, "agent3", file)
+	assert.Equal(t, http.StatusOK, code, "agent of a profile with a cloned task")
+
+	// The Client-Cert header proves nothing, it's only used behind a reverse proxy
+	headerDownload := func(reverseProxyAuthPort string) int {
+		h.ReverseProxyAuthPort = reverseProxyAuthPort
+		defer func() { h.ReverseProxyAuthPort = "" }()
+
+		req := httptest.NewRequest(http.MethodGet, file.URLPath(), nil)
+		req.Header.Set(AgentIDHeader, "agent1")
+		req.Header.Set("Client-Cert", ":"+base64.StdEncoding.EncodeToString(agentCert.Raw)+":")
+		c := e.NewContext(req, httptest.NewRecorder())
+		c.SetParamNames("profile", "hash", "name")
+		c.SetParamValues(strconv.Itoa(file.ProfileID), file.Hash, file.Name)
+
+		var httpErr *echo.HTTPError
+		if err := h.AgentFile(c); errors.As(err, &httpErr) {
+			return httpErr.Code
+		}
+		return http.StatusOK
+	}
+	assert.Equal(t, http.StatusUnauthorized, headerDownload(""), "header without reverse proxy")
+	assert.Equal(t, http.StatusOK, headerDownload("443"), "header behind a reverse proxy")
 }

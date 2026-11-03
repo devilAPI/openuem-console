@@ -24,7 +24,7 @@ func (h *Handler) AgentFile(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
 
-	cert, err := clientCertificate(c)
+	cert, err := clientCertificate(c, h.ReverseProxyAuthPort != "")
 	if err != nil {
 		return err
 	}
@@ -38,9 +38,9 @@ func (h *Handler) AgentFile(c echo.Context) error {
 	}
 
 	agentID := c.Request().Header.Get(AgentIDHeader)
-	applies, err := h.Model.ProfileAppliesToAgent(file.ProfileID, agentID)
+	applies, err := h.fileAppliesToAgent(file, agentID)
 	if err != nil {
-		log.Printf("[ERROR]: could not check if profile %d applies to agent %s, reason: %v", file.ProfileID, agentID, err)
+		log.Printf("[ERROR]: could not check if the file of profile %d applies to agent %s, reason: %v", file.ProfileID, agentID, err)
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
 	if !applies {
@@ -57,4 +57,21 @@ func (h *Handler) AgentFile(c echo.Context) error {
 	}
 
 	return c.Attachment(path, file.Name)
+}
+
+// fileAppliesToAgent reports if the agent may download a file: the profile it was uploaded
+// for, or the profile of any task that uses it (e.g. a cloned task), applies to the agent
+func (h *Handler) fileAppliesToAgent(file taskfiles.File, agentID string) (bool, error) {
+	profileIDs, err := h.Model.ProfilesUsingTaskFile(file.URLPath())
+	if err != nil {
+		return false, err
+	}
+
+	for _, profileID := range append([]int{file.ProfileID}, profileIDs...) {
+		applies, err := h.Model.ProfileAppliesToAgent(profileID, agentID)
+		if err != nil || applies {
+			return applies, err
+		}
+	}
+	return false, nil
 }

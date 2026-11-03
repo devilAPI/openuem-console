@@ -537,6 +537,7 @@ pt:
     queued_title: "%d computadores estão offline"
     queued_description: "Vão atualizar todo o seu software assim que voltarem a ligar-se. Os pedidos que esperem mais de 30 dias são descartados."
     show_status: "Mostrar o estado das atualizações"
+    not_queued: "O computador está offline e o seu agente ainda não pode receber atualizações em fila. Atualize o agente enquanto o computador estiver online."
   updatestatus:
     tab: "Estado das atualizações"
     title: "Estado das atualizações de software"

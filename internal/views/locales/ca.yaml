@@ -537,6 +537,7 @@ ca:
     queued_title: "%d equips estan desconnectats"
     queued_description: "Actualitzaran tot el seu programari tan aviat com es tornin a connectar. Les sol·licituds que esperin més de 30 dies es descarten."
     show_status: "Mostra l'estat de les actualitzacions"
+    not_queued: "L'equip està desconnectat i el seu agent encara no pot rebre actualitzacions en cua. Actualitzeu l'agent mentre l'equip estigui connectat."
   updatestatus:
     tab: "Estat de les actualitzacions"
     title: "Estat de les actualitzacions de programari"

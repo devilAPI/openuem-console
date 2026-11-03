@@ -14,6 +14,7 @@ import (
 	"github.com/invopop/ctxi18n/i18n"
 	"github.com/labstack/echo/v4"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/open-uem/ent"
 	openuem_nats "github.com/open-uem/nats"
 	"github.com/open-uem/openuem-console/internal/views/computers_views"
@@ -72,6 +73,8 @@ func (h *Handler) UpdateAllPackagesOnAgents(c echo.Context, agentIDs []string, c
 	result := deploy_views.UpdateAllResult{}
 	for agentID, outcome := range h.queuePackageUpdates(allowed) {
 		switch {
+		case errors.Is(outcome.err, errUpdateNotQueued):
+			result.Failures = append(result.Failures, deploy_views.UpdateRequestFailure{Computer: nicknames[agentID], Reason: i18n.T(c.Request().Context(), "updateall.not_queued")})
 		case outcome.err != nil:
 			result.Failures = append(result.Failures, deploy_views.UpdateRequestFailure{Computer: nicknames[agentID], Reason: outcome.err.Error()})
 		case outcome.online:
@@ -89,6 +92,10 @@ type queueOutcome struct {
 	online bool
 	err    error
 }
+
+// errUpdateNotQueued is returned when an offline agent can't receive queued requests, e.g.
+// its version doesn't support it: AGENTS_STREAM only keeps messages agents are interested in
+var errUpdateNotQueued = errors.New("the update request could not be queued")
 
 // queuePackageUpdates publishes, concurrently, an update request for every agent in
 // AGENTS_STREAM and checks which agents are online and start the run right away
@@ -108,6 +115,9 @@ func (h *Handler) queuePackageUpdates(agentIDs []string) map[string]queueOutcome
 			outcome := queueOutcome{}
 			if outcome.err = h.queueAgentPackageUpdates(agentID); outcome.err == nil {
 				outcome.online = h.agentIsOnline(agentID)
+				if queued, known := h.queuedPackageUpdates(agentID); !outcome.online && known && !queued {
+					outcome.err = errUpdateNotQueued
+				}
 			}
 
 			mu.Lock()
@@ -138,18 +148,26 @@ func (h *Handler) agentIsOnline(agentID string) bool {
 	return err == nil
 }
 
-// hasQueuedPackageUpdates reports if an update request is waiting in AGENTS_STREAM for an
-// agent. Messages are removed from the stream once the agent has received them.
-func (h *Handler) hasQueuedPackageUpdates(agentID string) bool {
+// queuedPackageUpdates reports if an update request is waiting in AGENTS_STREAM for an
+// agent. Messages are removed from the stream once the agent has received them. known is
+// false if the stream couldn't be read, e.g. because NATS doesn't allow it.
+func (h *Handler) queuedPackageUpdates(agentID string) (queued bool, known bool) {
 	if h.AgentStream == nil {
-		return false
+		return false, false
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), agentPingTimeout)
 	defer cancel()
 
 	_, err := h.AgentStream.GetLastMsgForSubject(ctx, queuedUpdatePackagesSubject+agentID)
-	return err == nil
+	switch {
+	case err == nil:
+		return true, true
+	case errors.Is(err, jetstream.ErrMsgNotFound):
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // DeployUpdateStatus shows the status of the software update runs of the agents
@@ -224,7 +242,7 @@ func (h *Handler) updateStatuses(agents []*ent.Agent) []deploy_views.UpdateStatu
 				// Agents that don't support software updates are online but don't answer
 				row.Online = h.agentIsOnline(agent.ID)
 			}
-			row.Queued = h.hasQueuedPackageUpdates(agent.ID)
+			row.Queued, _ = h.queuedPackageUpdates(agent.ID)
 
 			rows[i] = row
 		}()

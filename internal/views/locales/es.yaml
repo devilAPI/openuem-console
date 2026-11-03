@@ -537,6 +537,7 @@ es:
     queued_title: "%d equipos están desconectados"
     queued_description: "Actualizarán todo su software en cuanto se vuelvan a conectar. Las solicitudes que esperen más de 30 días se descartan."
     show_status: "Ver el estado de las actualizaciones"
+    not_queued: "El equipo está desconectado y su agente aún no puede recibir actualizaciones en cola. Actualice el agente mientras el equipo esté conectado."
   updatestatus:
     tab: "Estado de las actualizaciones"
     title: "Estado de las actualizaciones de software"

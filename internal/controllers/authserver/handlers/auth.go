@@ -19,7 +19,7 @@ import (
 func (h *Handler) Auth(c echo.Context) error {
 	var err error
 
-	cert, err := clientCertificate(c)
+	cert, err := clientCertificate(c, h.ReverseProxyAuthPort != "")
 	if err != nil {
 		return err
 	}
@@ -177,15 +177,17 @@ func getIssuerFromCert(cert, caCert *x509.Certificate) (*x509.Certificate, error
 	}
 }
 
-// clientCertificate returns the certificate presented by the client, either in the TLS
-// connection or, behind a reverse proxy (NGINX or Caddy), in the Client-Cert header
-func clientCertificate(c echo.Context) (*x509.Certificate, error) {
+// clientCertificate returns the certificate presented by the client in the TLS connection.
+// Behind a reverse proxy (NGINX or Caddy), the proxy passes it in the Client-Cert header.
+// The header proves nothing by itself, as anyone can send any certificate in it, so it's
+// only used when a reverse proxy is configured.
+func clientCertificate(c echo.Context, behindReverseProxy bool) (*x509.Certificate, error) {
 	if c.Request().TLS != nil && len(c.Request().TLS.PeerCertificates) == 1 {
 		return c.Request().TLS.PeerCertificates[0], nil
 	}
 
 	clientEncodedCert := c.Request().Header.Get("Client-Cert")
-	if clientEncodedCert == "" {
+	if clientEncodedCert == "" || !behindReverseProxy {
 		return nil, echo.NewHTTPError(http.StatusUnauthorized, "Please provide valid credentials")
 	}
 
