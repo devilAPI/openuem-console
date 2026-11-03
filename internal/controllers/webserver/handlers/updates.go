@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -11,9 +14,11 @@ import (
 	"github.com/invopop/ctxi18n/i18n"
 	"github.com/labstack/echo/v4"
 	"github.com/nats-io/nats.go"
+	"github.com/open-uem/ent"
 	openuem_nats "github.com/open-uem/nats"
 	"github.com/open-uem/openuem-console/internal/views/computers_views"
 	"github.com/open-uem/openuem-console/internal/views/deploy_views"
+	"github.com/open-uem/openuem-console/internal/views/filters"
 	"github.com/open-uem/openuem-console/internal/views/partials"
 )
 
@@ -24,6 +29,12 @@ const (
 	updatePackagesTimeout = 10 * time.Second
 	// Maximum number of agents asked to update packages at the same time
 	updatePackagesConcurrency = 16
+	// Agents answer status requests without running the package manager
+	updateStatusTimeout = 5 * time.Second
+	agentPingTimeout    = 2 * time.Second
+
+	// Subject of the update requests queued in AGENTS_STREAM (agent.update.>)
+	queuedUpdatePackagesSubject = "agent.update.packages."
 )
 
 // DeployUpdate shows the page to update a package on several agents
@@ -36,9 +47,10 @@ func (h *Handler) DeployUpdateAll(c echo.Context) error {
 	return h.SelectAgentsForDeployment(c, deploy_views.ActionUpdateAll)
 }
 
-// UpdateAllPackagesOnAgents asks the agents to update every package with an available update
+// UpdateAllPackagesOnAgents queues an update run for every agent. The requests are kept in
+// the agents' JetStream stream, so agents that are offline start the run when they connect.
 func (h *Handler) UpdateAllPackagesOnAgents(c echo.Context, agentIDs []string, commonInfo *partials.CommonInfo) error {
-	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
+	if h.JetStream == nil || h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "nats.not_connected"), false))
 	}
 
@@ -57,20 +69,33 @@ func (h *Handler) UpdateAllPackagesOnAgents(c echo.Context, agentIDs []string, c
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "agents.no_selected_agents_to_deploy"), true))
 	}
 
-	failures := []deploy_views.UpdateRequestFailure{}
-	for agentID, err := range h.requestPackageUpdates(allowed, nil) {
-		failures = append(failures, deploy_views.UpdateRequestFailure{Computer: nicknames[agentID], Reason: updateRequestErrorMessage(c, err)})
+	result := deploy_views.UpdateAllResult{}
+	for agentID, outcome := range h.queuePackageUpdates(allowed) {
+		switch {
+		case outcome.err != nil:
+			result.Failures = append(result.Failures, deploy_views.UpdateRequestFailure{Computer: nicknames[agentID], Reason: outcome.err.Error()})
+		case outcome.online:
+			result.Started++
+		default:
+			result.Queued = append(result.Queued, nicknames[agentID])
+		}
 	}
+	slices.Sort(result.Queued)
 
-	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.UpdateAllRequested(c, len(allowed)-len(failures), failures, commonInfo), commonInfo))
+	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.UpdateAllRequested(c, result, commonInfo), commonInfo))
 }
 
-// requestPackageUpdates asks several agents, concurrently, to start an update run. It returns
-// the agents that couldn't start it, e.g. because they're offline or already updating.
-func (h *Handler) requestPackageUpdates(agentIDs []string, packages []openuem_nats.AvailableUpdate) map[string]error {
+type queueOutcome struct {
+	online bool
+	err    error
+}
+
+// queuePackageUpdates publishes, concurrently, an update request for every agent in
+// AGENTS_STREAM and checks which agents are online and start the run right away
+func (h *Handler) queuePackageUpdates(agentIDs []string) map[string]queueOutcome {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	failures := map[string]error{}
+	outcomes := map[string]queueOutcome{}
 	limit := make(chan struct{}, updatePackagesConcurrency)
 
 	for _, agentID := range agentIDs {
@@ -80,16 +105,133 @@ func (h *Handler) requestPackageUpdates(agentIDs []string, packages []openuem_na
 			limit <- struct{}{}
 			defer func() { <-limit }()
 
-			if err := h.requestAgentPackageUpdates(agentID, packages); err != nil {
-				mu.Lock()
-				failures[agentID] = err
-				mu.Unlock()
+			outcome := queueOutcome{}
+			if outcome.err = h.queueAgentPackageUpdates(agentID); outcome.err == nil {
+				outcome.online = h.agentIsOnline(agentID)
 			}
+
+			mu.Lock()
+			outcomes[agentID] = outcome
+			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 
-	return failures
+	return outcomes
+}
+
+func (h *Handler) queueAgentPackageUpdates(agentID string) error {
+	data, err := json.Marshal(openuem_nats.UpdatePackagesRequest{AgentId: agentID, RequestedAt: time.Now()})
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), updatePackagesTimeout)
+	defer cancel()
+
+	_, err = h.JetStream.Publish(ctx, queuedUpdatePackagesSubject+agentID, data)
+	return err
+}
+
+func (h *Handler) agentIsOnline(agentID string) bool {
+	_, err := h.NATSConnection.Request("agent.ping."+agentID, nil, agentPingTimeout)
+	return err == nil
+}
+
+// hasQueuedPackageUpdates reports if an update request is waiting in AGENTS_STREAM for an
+// agent. Messages are removed from the stream once the agent has received them.
+func (h *Handler) hasQueuedPackageUpdates(agentID string) bool {
+	if h.AgentStream == nil {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), agentPingTimeout)
+	defer cancel()
+
+	_, err := h.AgentStream.GetLastMsgForSubject(ctx, queuedUpdatePackagesSubject+agentID)
+	return err == nil
+}
+
+// DeployUpdateStatus shows the status of the software update runs of the agents
+func (h *Handler) DeployUpdateStatus(c echo.Context) error {
+	commonInfo, err := h.GetCommonInfo(c)
+	if err != nil {
+		return err
+	}
+
+	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
+		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "nats.not_connected"), false))
+	}
+
+	itemsPerPage, err := h.Model.GetDefaultItemsPerPage()
+	if err != nil {
+		log.Println("[ERROR]: could not get items per page from database")
+		itemsPerPage = 5
+	}
+
+	p := partials.NewPaginationAndSort(itemsPerPage)
+	p.GetPaginationAndSortParams(c.FormValue("page"), c.FormValue("pageSize"), c.FormValue("sortBy"), c.FormValue("sortOrder"), c.FormValue("currentSortBy"), itemsPerPage)
+	if p.SortBy == "" {
+		p.SortBy = "nickname"
+		p.SortOrder = "asc"
+	}
+
+	f := filters.AgentFilter{}
+	p.NItems, err = h.Model.CountAllAgents(f, true, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+	}
+
+	agents, err := h.Model.GetAgentsByPage(p, f, true, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+	}
+
+	refreshTime, err := h.Model.GetDefaultRefreshTime()
+	if err != nil {
+		log.Println("[ERROR]: could not get refresh time from database")
+		refreshTime = 5
+	}
+
+	rows := h.updateStatuses(agents)
+	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.UpdateStatus(c, p, rows, refreshTime, itemsPerPage, commonInfo), commonInfo))
+}
+
+// updateStatuses asks the agents, concurrently, for the status of their last update run
+func (h *Handler) updateStatuses(agents []*ent.Agent) []deploy_views.UpdateStatusRow {
+	var wg sync.WaitGroup
+	rows := make([]deploy_views.UpdateStatusRow, len(agents))
+	limit := make(chan struct{}, updatePackagesConcurrency)
+	request, _ := json.Marshal(openuem_nats.ListPackageUpdatesRequest{StatusOnly: true})
+
+	for i, agent := range agents {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			limit <- struct{}{}
+			defer func() { <-limit }()
+
+			row := deploy_views.UpdateStatusRow{AgentID: agent.ID, Nickname: agent.Nickname, OS: agent.Os}
+
+			msg, err := h.NATSConnection.Request("agent.listpackageupdates."+agent.ID, request, updateStatusTimeout)
+			if err == nil {
+				response := openuem_nats.AvailableUpdatesResponse{}
+				if err := json.Unmarshal(msg.Data, &response); err == nil {
+					row.Reachable = true
+					row.Run = response.LastRun
+				}
+			} else {
+				// Agents that don't support software updates are online but don't answer
+				row.Online = h.agentIsOnline(agent.ID)
+			}
+			row.Queued = h.hasQueuedPackageUpdates(agent.ID)
+
+			rows[i] = row
+		}()
+	}
+	wg.Wait()
+
+	return rows
 }
 
 // errAgentUpdateRefused is returned when the agent refuses to start an update run

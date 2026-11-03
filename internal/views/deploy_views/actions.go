@@ -1,5 +1,12 @@
 package deploy_views
 
+import (
+	"context"
+
+	"github.com/invopop/ctxi18n/i18n"
+	openuem_nats "github.com/open-uem/nats"
+)
+
 // Actions that can be requested from the Deploy section
 const (
 	ActionInstall   = "install"
@@ -7,6 +14,9 @@ const (
 	ActionUninstall = "uninstall"
 	// ActionUpdateAll updates every package that has an available update
 	ActionUpdateAll = "updateall"
+
+	// TabUpdateStatus isn't an action: it shows the status of the agents' update runs
+	TabUpdateStatus = "updatestatus"
 )
 
 // ParseAction validates the deploy action sent in a form. The "true" and "false" values
@@ -50,6 +60,8 @@ func actionTitle(action string) string {
 		return "Uninstall"
 	case ActionUpdateAll:
 		return "updateall.tab"
+	case TabUpdateStatus:
+		return "updatestatus.tab"
 	default:
 		return "Install"
 	}
@@ -67,8 +79,38 @@ func actionIcon(action string) string {
 	}
 }
 
-// UpdateRequestFailure describes a computer that couldn't start updating its packages
+// UpdateRequestFailure describes a computer whose update request couldn't be sent
 type UpdateRequestFailure struct {
 	Computer string
 	Reason   string
+}
+
+// UpdateAllResult summarizes a request to update all software on several computers
+type UpdateAllResult struct {
+	// Started is the number of computers that are online and start updating now
+	Started int
+	// Queued lists the computers that are offline and will update when they connect
+	Queued   []string
+	Failures []UpdateRequestFailure
+}
+
+// UpdateStatusRow is the status of a computer's software update runs
+type UpdateStatusRow struct {
+	AgentID  string
+	Nickname string
+	OS       string
+	// Reachable is set if the agent answered with the status of its last run
+	Reachable bool
+	// Online is set if the agent didn't answer the status request but answers pings,
+	// i.e. its version doesn't support software updates
+	Online bool
+	// Queued is set if an update request is waiting for the agent
+	Queued bool
+	Run    *openuem_nats.UpdateRun
+}
+
+// updateRunCounts describes how many packages of a run were updated, failed or were up to date
+func updateRunCounts(ctx context.Context, run *openuem_nats.UpdateRun) string {
+	updated, upToDate, failed := run.Counts()
+	return i18n.T(ctx, "updatestatus.result_counts", updated, failed, upToDate)
 }

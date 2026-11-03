@@ -217,7 +217,7 @@ templ lastUpdateRun(run *openuem_nats.UpdateRun, commonInfo *partials.CommonInfo
 	<div class="flex flex-col gap-2 mt-4">
 		<h4 class="uk-text-bold">{ i18n.T(ctx, "package_updates.last_run") }</h4>
 		<p class="uk-text-small uk-text-muted">
-			{ i18n.T(ctx, "package_updates.last_run_summary", commonInfo.Translator.FmtDateMedium(run.Started.Local()) + " " + commonInfo.Translator.FmtTimeShort(run.Started.Local()), countUpdated(run), countFailed(run), run.Total) }
+			{ i18n.T(ctx, "package_updates.last_run_summary", commonInfo.Translator.FmtDateMedium(run.Started.Local()) + " " + commonInfo.Translator.FmtTimeShort(run.Started.Local()), updatedCount(run), failedCount(run), run.Total) }
 		</p>
 		if run.Error != "" {
 			<p class="uk-text-small text-red-600">{ run.Error }</p>
@@ -278,22 +278,12 @@ func updateJSON(u openuem_nats.AvailableUpdate) string {
 	return string(data)
 }
 
-func countUpdated(run *openuem_nats.UpdateRun) int {
-	n := 0
-	for _, r := range run.Results {
-		if !r.Failed && !r.UpToDate {
-			n++
-		}
-	}
-	return n
+func updatedCount(run *openuem_nats.UpdateRun) int {
+	updated, _, _ := run.Counts()
+	return updated
 }
 
-func countFailed(run *openuem_nats.UpdateRun) int {
-	n := 0
-	for _, r := range run.Results {
-		if r.Failed {
-			n++
-		}
-	}
-	return n
+func failedCount(run *openuem_nats.UpdateRun) int {
+	_, _, failed := run.Counts()
+	return failed
 }

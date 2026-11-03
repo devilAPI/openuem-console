@@ -182,6 +182,7 @@ func (h *Handler) Register(e *echo.Echo, registerRateLimit float64) {
 	e.GET("/deploy/searchupdate", h.DeployUpdate, h.IsAuthenticated)
 	e.POST("/deploy/searchupdate", func(c echo.Context) error { return h.SearchPackagesAction(c, deploy_views.ActionUpdate) }, h.IsAuthenticated)
 	e.GET("/deploy/updateall", h.DeployUpdateAll, h.IsAuthenticated)
+	e.GET("/deploy/updatestatus", h.DeployUpdateStatus, h.IsAuthenticated)
 	e.GET("/deploy/selectpackagedeployment", h.SelectPackageDeployment, h.IsAuthenticated)
 	e.POST("/deploy/selectpackagedeployment", h.DeployPackageToSelectedAgents, h.IsAuthenticated)
 
@@ -196,6 +197,7 @@ func (h *Handler) Register(e *echo.Echo, registerRateLimit float64) {
 	e.GET("/tenant/:tenant/deploy/searchupdate", h.DeployUpdate, h.IsAuthenticated)
 	e.POST("/tenant/:tenant/deploy/searchupdate", func(c echo.Context) error { return h.SearchPackagesAction(c, deploy_views.ActionUpdate) }, h.IsAuthenticated)
 	e.GET("/tenant/:tenant/deploy/updateall", h.DeployUpdateAll, h.IsAuthenticated)
+	e.GET("/tenant/:tenant/deploy/updatestatus", h.DeployUpdateStatus, h.IsAuthenticated)
 	e.GET("/tenant/:tenant/deploy/selectpackagedeployment", h.SelectPackageDeployment, h.IsAuthenticated)
 	e.POST("/tenant/:tenant/deploy/selectpackagedeployment", h.DeployPackageToSelectedAgents, h.IsAuthenticated)
 	// TODO-Steve check if user has permissions to get the sites for this tenant
@@ -212,6 +214,7 @@ func (h *Handler) Register(e *echo.Echo, registerRateLimit float64) {
 	e.GET("/tenant/:tenant/site/:site/deploy/searchupdate", h.DeployUpdate, h.IsAuthenticated)
 	e.POST("/tenant/:tenant/site/:site/deploy/searchupdate", func(c echo.Context) error { return h.SearchPackagesAction(c, deploy_views.ActionUpdate) }, h.IsAuthenticated)
 	e.GET("/tenant/:tenant/site/:site/deploy/updateall", h.DeployUpdateAll, h.IsAuthenticated)
+	e.GET("/tenant/:tenant/site/:site/deploy/updatestatus", h.DeployUpdateStatus, h.IsAuthenticated)
 	e.GET("/tenant/:tenant/site/:site/deploy/selectpackagedeployment", h.SelectPackageDeployment, h.IsAuthenticated)
 	e.POST("/tenant/:tenant/site/:site/deploy/selectpackagedeployment", h.DeployPackageToSelectedAgents, h.IsAuthenticated)
 
