@@ -568,6 +568,7 @@ func (h *Handler) Register(e *echo.Echo, registerRateLimit float64) {
 	e.DELETE("/tasks/:id", h.EditTask, h.IsAuthenticated)
 	e.GET("/tasks/:id/clone", h.CloneTask, h.IsAuthenticated)
 	e.POST("/tasks/:id/clone", h.CloneTask, h.IsAuthenticated)
+	e.POST("/tasks/files/msi", h.UploadMSIFile, h.IsAuthenticated)
 	e.GET("/tasks/:profile/confirm-delete/:task", h.ConfirmDeleteTask, h.IsAuthenticated)
 	e.POST("/tasks/:id/enable", func(c echo.Context) error { return h.EnableTask(c, true) }, h.IsAuthenticated)
 	e.POST("/tasks/:id/disable", func(c echo.Context) error { return h.EnableTask(c, false) }, h.IsAuthenticated)
