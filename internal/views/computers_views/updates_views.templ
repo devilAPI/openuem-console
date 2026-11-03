@@ -26,16 +26,16 @@ templ ComputerUpdates(c echo.Context, p partials.PaginationAndSort, agent *ent.A
 								<uk-icon hx-history="false" icon="package-check" custom-class="h-5 w-5" uk-cloack></uk-icon>
 								<h3 class="uk-card-title">{ i18n.T(ctx, "package_updates.title") }</h3>
 							</div>
-							<a
+							<button
+								type="button"
 								class="uk-button uk-button-default"
-								href={ templ.URL(partials.GetNavigationUrl(commonInfo, fmt.Sprintf("/computers/%s/deploy", agent.ID))) }
 								hx-get={ string(templ.URL(partials.GetNavigationUrl(commonInfo, fmt.Sprintf("/computers/%s/deploy", agent.ID)))) }
 								hx-push-url="true"
 								hx-target="#main"
 								hx-swap="outerHTML"
 							>
 								{ i18n.T(ctx, "Deploy") }
-							</a>
+							</button>
 						</div>
 						<p class="uk-margin-small-top uk-text-small">{ i18n.T(ctx, "package_updates.description") }</p>
 					</div>

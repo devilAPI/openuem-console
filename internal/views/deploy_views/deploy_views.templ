@@ -482,26 +482,26 @@ templ UpdateAllRequested(c echo.Context, result UpdateAllResult, commonInfo *par
 					</div>
 				}
 				<div class="flex gap-4">
-					<a
+					<button
+						type="button"
 						class="uk-button uk-button-primary"
-						href={ templ.URL(partials.GetNavigationUrl(commonInfo, actionPath(TabUpdateStatus))) }
 						hx-get={ string(templ.URL(partials.GetNavigationUrl(commonInfo, actionPath(TabUpdateStatus)))) }
 						hx-push-url="true"
 						hx-target="#main"
 						hx-swap="outerHTML"
 					>
 						{ i18n.T(ctx, "updateall.show_status") }
-					</a>
-					<a
+					</button>
+					<button
+						type="button"
 						class="uk-button uk-button-default"
-						href={ templ.URL(partials.GetNavigationUrl(commonInfo, actionPath(ActionUpdateAll))) }
 						hx-get={ string(templ.URL(partials.GetNavigationUrl(commonInfo, actionPath(ActionUpdateAll)))) }
 						hx-push-url="true"
 						hx-target="#main"
 						hx-swap="outerHTML"
 					>
 						{ i18n.T(ctx, "updateall.back") }
-					</a>
+					</button>
 				</div>
 			</div>
 		</div>
