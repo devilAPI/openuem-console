@@ -12,18 +12,20 @@
       powershell -ExecutionPolicy Bypass -File .\install-openuem-agent-fork.ps1
 
 .EXAMPLE
-    .\install-openuem-agent-fork.ps1 -ServerIP 192.168.2.164 -Domain uem.linck-it.de -SshPort 50
+    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com
 
 .EXAMPLE
     # Download and run in one line
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1))) -SshPort 50
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1))) -ServerIP 192.0.2.10 -Domain uem.example.com
 #>
 [CmdletBinding()]
 param(
-    [string]$ServerIP = "192.168.2.164",
-    [string]$Domain = "uem.linck-it.de",
+    # IP address of the OpenUEM server
+    [Parameter(Mandatory = $true)][string]$ServerIP,
+    # Domain used when installing the server (console.<domain>, nats.<domain>, ocsp.<domain>)
+    [Parameter(Mandatory = $true)][string]$Domain,
     [string]$SshUser = "root",
-    [int]$SshPort = 50,
+    [int]$SshPort = 22,
     [string]$AgentVersion = "0.11.0",
     [int]$NatsPort = 4433,
     [int]$SftpPort = 2022,
@@ -126,7 +128,7 @@ if (-not $OfficialOnly) {
     Write-Step "Replacing $agentExe with the fork's agent"
     # The agent may not answer a stop request while it sends its first report
     try { Stop-Service openuem-agent -Force -ErrorAction Stop } catch { Write-Host "The service didn't stop in time, killing it" }
-    taskkill.exe /F /IM openuem-agent.exe 2>$null | Out-Null
+    Get-Process -Name openuem-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     for ($i = 0; $i -lt 30 -and (Get-Process -Name openuem-agent -ErrorAction SilentlyContinue); $i++) { Start-Sleep 1 }
     if (-not (Test-Path "$agentExe.official")) { Copy-Item $agentExe "$agentExe.official" }
     Copy-Item (Join-Path $WorkDir "openuem-agent.exe") $agentExe -Force
