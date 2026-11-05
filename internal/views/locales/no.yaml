@@ -553,6 +553,7 @@ no:
     queued_online: "Oppdatering forespurt"
     unsupported: "Agenten støtter ikke programvareoppdateringer"
     result_counts: "%d oppdatert, %d mislyktes, %d allerede oppdatert"
+    nothing_to_update: "Ingenting å oppdatere"
   library:
     tab: "Programvarebibliotek"
     title: "Privat winget-repositorium"

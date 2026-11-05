@@ -553,6 +553,7 @@ fr:
     queued_online: "Mise à jour demandée"
     unsupported: "L'agent ne prend pas en charge les mises à jour logicielles"
     result_counts: "%d mis à jour, %d en échec, %d déjà à jour"
+    nothing_to_update: "Rien à mettre à jour"
   library:
     tab: "Bibliothèque de logiciels"
     title: "Dépôt winget privé"

@@ -576,6 +576,8 @@ templ UpdateStatus(c echo.Context, p partials.PaginationAndSort, rows []UpdateSt
 											<td class="!align-middle">
 												if row.Run != nil && len(row.Run.Results) > 0 {
 													{ updateRunCounts(ctx, row.Run) }
+												} else if row.Reachable && row.Run != nil && !row.Run.Running() && row.Run.Error == "" {
+													<span class="uk-text-muted">{ i18n.T(ctx, "updatestatus.nothing_to_update") }</span>
 												}
 											</td>
 										</tr>

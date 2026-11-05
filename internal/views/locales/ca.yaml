@@ -553,6 +553,7 @@ ca:
     queued_online: "Actualització sol·licitada"
     unsupported: "L'agent no admet actualitzacions de programari"
     result_counts: "%d actualitzats, %d fallits, %d ja actualitzats"
+    nothing_to_update: "Res per actualitzar"
   library:
     tab: "Biblioteca de programari"
     title: "Repositori privat de winget"

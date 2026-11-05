@@ -553,6 +553,7 @@ es:
     queued_online: "Actualización solicitada"
     unsupported: "El agente no admite actualizaciones de software"
     result_counts: "%d actualizados, %d fallidos, %d ya actualizados"
+    nothing_to_update: "Nada que actualizar"
   library:
     tab: "Biblioteca de software"
     title: "Repositorio privado de winget"

@@ -553,6 +553,7 @@ de:
     queued_online: "Aktualisierung angefordert"
     unsupported: "Der Agent unterstützt keine Softwareupdates"
     result_counts: "%d aktualisiert, %d fehlgeschlagen, %d bereits aktuell"
+    nothing_to_update: "Keine Updates verfügbar"
   library:
     tab: "Softwarebibliothek"
     title: "Privates winget-Repository"
