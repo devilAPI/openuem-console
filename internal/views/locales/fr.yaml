@@ -556,7 +556,7 @@ fr:
   library:
     tab: "Bibliothèque de logiciels"
     title: "Dépôt winget privé"
-    description: "Les paquets téléversés ici sont publiés dans le dépôt winget d'OpenUEM. Les ordinateurs Windows l'enregistrent automatiquement et installent, mettent à jour et désinstallent ces paquets avec winget comme n'importe quel autre paquet : recherchez-les dans Deploy > Installer, ils sont mis à jour avec les mises à jour logicielles. Les ordinateurs les téléchargent depuis ce serveur en HTTPS et seuls les ordinateurs de l'organisation du paquet peuvent les voir."
+    description: "Les paquets téléversés ici sont publiés dans le dépôt winget d'OpenUEM. Les ordinateurs Windows l'enregistrent automatiquement et installent, mettent à jour et désinstallent ces paquets avec winget comme n'importe quel autre paquet : recherchez-les dans Deploy → Installer, ils sont mis à jour avec les mises à jour logicielles. Les ordinateurs les téléchargent depuis ce serveur en HTTPS et seuls les ordinateurs de l'organisation du paquet peuvent les voir."
     file: "Paquet MSI"
     file_description: "Le nom, l'éditeur, la version et le code produit sont lus dans le paquet MSI. Ne remplissez un champ que pour le modifier."
     name: "Nom"

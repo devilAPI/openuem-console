@@ -556,7 +556,7 @@ en:
   library:
     tab: "Software library"
     title: "Private winget repository"
-    description: "Packages uploaded here are published in OpenUEM's own winget repository. Windows computers register it automatically and install, update and uninstall these packages with winget, like any other package: search them in Deploy > Install, and they're updated with the software updates. Computers download them from this server over HTTPS, and only computers of the package's organization can see them."
+    description: "Packages uploaded here are published in OpenUEM's own winget repository. Windows computers register it automatically and install, update and uninstall these packages with winget, like any other package: search them in Deploy → Install, and they're updated with the software updates. Computers download them from this server over HTTPS, and only computers of the package's organization can see them."
     file: "MSI package"
     file_description: "Name, publisher, version and product code are read from the MSI package. Fill in a field only to change it."
     name: "Name"

@@ -22,6 +22,9 @@ import (
 	"github.com/open-uem/openuem-console/internal/views/deploy_views"
 	"github.com/open-uem/openuem-console/internal/views/partials"
 	"github.com/open-uem/openuem-console/internal/wingetrepo"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -349,6 +352,10 @@ func readStagedMSIProperties(path string) (map[string]string, error) {
 // manufacturer and product name
 func defaultPackageIdentifier(publisher, name string) string {
 	part := func(s string) string {
+		// Keep the base letter of accented characters (Müller -> Muller)
+		if plain, _, err := transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), s); err == nil {
+			s = plain
+		}
 		words := identifierPartPattern.Split(s, -1)
 		for i, w := range words {
 			if w != "" {

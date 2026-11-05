@@ -556,7 +556,7 @@ es:
   library:
     tab: "Biblioteca de software"
     title: "Repositorio privado de winget"
-    description: "Los paquetes subidos aquí se publican en el propio repositorio de winget de OpenUEM. Los equipos Windows lo registran automáticamente e instalan, actualizan y desinstalan estos paquetes con winget como cualquier otro paquete: búsquelos en Deploy > Instalar y se actualizan con las actualizaciones de software. Los equipos los descargan de este servidor por HTTPS y solo los equipos de la organización del paquete pueden verlos."
+    description: "Los paquetes subidos aquí se publican en el propio repositorio de winget de OpenUEM. Los equipos Windows lo registran automáticamente e instalan, actualizan y desinstalan estos paquetes con winget como cualquier otro paquete: búsquelos en Deploy → Instalar y se actualizan con las actualizaciones de software. Los equipos los descargan de este servidor por HTTPS y solo los equipos de la organización del paquete pueden verlos."
     file: "Paquete MSI"
     file_description: "El nombre, el editor, la versión y el código de producto se leen del paquete MSI. Rellene un campo solo para cambiarlo."
     name: "Nombre"

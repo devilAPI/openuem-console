@@ -556,7 +556,7 @@ ca:
   library:
     tab: "Biblioteca de programari"
     title: "Repositori privat de winget"
-    description: "Els paquets pujats aquí es publiquen al repositori de winget propi d'OpenUEM. Els equips Windows el registren automàticament i instal·len, actualitzen i desinstal·len aquests paquets amb winget com qualsevol altre paquet: cerqueu-los a Deploy > Instal·lar i s'actualitzen amb les actualitzacions de programari. Els equips els baixen d'aquest servidor per HTTPS i només els equips de l'organització del paquet els poden veure."
+    description: "Els paquets pujats aquí es publiquen al repositori de winget propi d'OpenUEM. Els equips Windows el registren automàticament i instal·len, actualitzen i desinstal·len aquests paquets amb winget com qualsevol altre paquet: cerqueu-los a Deploy → Instal·lar i s'actualitzen amb les actualitzacions de programari. Els equips els baixen d'aquest servidor per HTTPS i només els equips de l'organització del paquet els poden veure."
     file: "Paquet MSI"
     file_description: "El nom, l'editor, la versió i el codi de producte es llegeixen del paquet MSI. Ompliu un camp només per canviar-lo."
     name: "Nom"

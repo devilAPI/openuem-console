@@ -556,7 +556,7 @@ no:
   library:
     tab: "Programvarebibliotek"
     title: "Privat winget-repositorium"
-    description: "Pakker som lastes opp her, publiseres i OpenUEMs eget winget-repositorium. Windows-datamaskiner registrerer det automatisk og installerer, oppdaterer og avinstallerer disse pakkene med winget som alle andre pakker: søk etter dem under Deploy > Installer, og de oppdateres med programvareoppdateringene. Datamaskinene laster dem ned fra denne serveren over HTTPS, og bare datamaskiner i pakkens organisasjon kan se dem."
+    description: "Pakker som lastes opp her, publiseres i OpenUEMs eget winget-repositorium. Windows-datamaskiner registrerer det automatisk og installerer, oppdaterer og avinstallerer disse pakkene med winget som alle andre pakker: søk etter dem under Deploy → Installer, og de oppdateres med programvareoppdateringene. Datamaskinene laster dem ned fra denne serveren over HTTPS, og bare datamaskiner i pakkens organisasjon kan se dem."
     file: "MSI-pakke"
     file_description: "Navn, utgiver, versjon og produktkode leses fra MSI-pakken. Fyll bare ut et felt for å endre det."
     name: "Navn"
