@@ -209,8 +209,8 @@ OCSP_PORT="$(get_env OCSP_PORT)"
 
 # The upstream compose file only has network aliases for openuem.example, containers
 # don't read the host's /etc/hosts, so aliases are added for the chosen domain
-mkdir -p "$INSTALL_DIR/task-files"
-chmod 700 "$INSTALL_DIR/task-files"
+mkdir -p "$INSTALL_DIR/task-files" "$INSTALL_DIR/winget-repository"
+chmod 700 "$INSTALL_DIR/task-files" "$INSTALL_DIR/winget-repository"
 
 # The openuem-certs container rewrites nats.cfg every time it starts, so the permissions
 # the fork needs are added by this script, which the container runs right after
@@ -222,9 +222,9 @@ cat >"$INSTALL_DIR/fork/nats-permissions.sh" <<'NATS_PERMISSIONS_EOF'
 set -u
 cfg="${1:-/etc/nats/nats.cfg}"
 
-# Agents may only subscribe to an explicit list of subjects. The fork's agent needs two
-# more: to list the available updates and to start update runs.
-for subject in listpackageupdates updatepackages; do
+# Agents may only subscribe to an explicit list of subjects. The fork's agent needs more:
+# to list the available updates, to start update runs and to register the winget repository.
+for subject in listpackageupdates updatepackages wingetsource; do
     grep -q "\"agent.${subject}.> openuem-agent-management\"" "$cfg" && continue
     sed -i "s|\"agent.runprofile.> openuem-agent-management\"|&, \"agent.${subject}.> openuem-agent-management\"|" "$cfg"
 done
@@ -258,6 +258,7 @@ services:
     # Files uploaded for tasks (MSI packages) must survive container updates
     volumes:
       - "./task-files:/bin/task-files:z"
+      - "./winget-repository:/bin/winget-repository:z"
     networks:
       openuem:
         aliases:
@@ -427,6 +428,8 @@ New features of the fork:
   Deploy > Update all software        update everything on selected computers,
                                       offline computers update when they connect
   Deploy > Update status              status of the update runs of all computers
+  Deploy > Software library           private winget repository: upload MSI packages,
+                                      computers install and update them with winget
   Profiles > (task) > MSI package     upload the MSI package instead of giving a URL,
                                       only the profile's computers can download it
   Profiles > (task) > script          load the script from a file
