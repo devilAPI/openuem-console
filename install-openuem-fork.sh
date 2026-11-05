@@ -274,10 +274,23 @@ services:
         aliases:
           - nats.${OPENUEM_DOMAIN}
   ocsp-responder:
+    environment:
+      - ENV=prod
     networks:
       openuem:
         aliases:
           - ocsp.${OPENUEM_DOMAIN}
+  # Only the console, built from the current code, migrates the database. The published
+  # images are older and would drop the columns the console adds.
+  notification-worker:
+    environment:
+      - ENV=prod
+  cert-manager-worker:
+    environment:
+      - ENV=prod
+  agents-worker:
+    environment:
+      - ENV=prod
 EOF
 
 if [ "$ADD_HOSTS_ENTRIES" = "1" ]; then
@@ -323,7 +336,8 @@ docker compose up -d --remove-orphans
 # NATS reads nats.cfg, regenerated and patched by openuem-certs, only when it starts.
 # Agents and the console reconnect on their own.
 [ "$FIRST_INSTALL" = "1" ] || docker compose restart nats-server
-# Recreate the console after NATS, so it uses the rebuilt image and the new permissions
+# Recreate the console after NATS and the workers, so it uses the rebuilt image and the
+# new permissions, and adds the database columns that older workers may have dropped
 [ "$FIRST_INSTALL" = "1" ] || docker compose up -d --force-recreate console
 
 for _ in $(seq 1 30); do
