@@ -31,6 +31,12 @@ func NewInformation() Information {
 	return Information{Data: InformationData{SourceIdentifier: SourceIdentifier, ServerSupportedVersions: ServerSupportedVersions}}
 }
 
+// ErrorResponse is the body of an error answer of the REST source
+type ErrorResponse struct {
+	ErrorCode    int    `json:"ErrorCode"`
+	ErrorMessage string `json:"ErrorMessage"`
+}
+
 // SearchRequest is the body of POST /manifestSearch
 type SearchRequest struct {
 	MaximumResults    int           `json:"MaximumResults,omitempty"`

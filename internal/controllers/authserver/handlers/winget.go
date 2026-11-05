@@ -18,26 +18,32 @@ const tenantsContextKey = "winget-agent-tenants"
 func (h *Handler) WinGetSourceAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if h.WinGetLibrary == nil {
-			return echo.NewHTTPError(http.StatusNotFound)
+			return wingetError(c, http.StatusNotFound)
 		}
 
 		agentID := c.Param("agent")
 		if !wingetrepo.ValidAgentToken(h.WinGetKey, agentID, c.Param("token")) {
-			return echo.NewHTTPError(http.StatusUnauthorized)
+			return wingetError(c, http.StatusUnauthorized)
 		}
 
 		tenantIDs, ok, err := h.Model.EnabledAgentTenants(agentID)
 		if err != nil {
 			log.Printf("[ERROR]: could not check the agent %s of the winget source, reason: %v", agentID, err)
-			return echo.NewHTTPError(http.StatusInternalServerError)
+			return wingetError(c, http.StatusInternalServerError)
 		}
 		if !ok {
-			return echo.NewHTTPError(http.StatusForbidden)
+			return wingetError(c, http.StatusForbidden)
 		}
 
 		c.Set(tenantsContextKey, tenantIDs)
 		return next(c)
 	}
+}
+
+// wingetError answers with a JSON error. The console's error handler renders HTML pages,
+// which winget can't read.
+func wingetError(c echo.Context, code int) error {
+	return c.JSON(code, wingetrepo.ErrorResponse{ErrorCode: code, ErrorMessage: http.StatusText(code)})
 }
 
 // visiblePackages returns the packages the agent's organizations can install
@@ -67,12 +73,12 @@ func (h *Handler) WinGetInformation(c echo.Context) error {
 func (h *Handler) WinGetManifestSearch(c echo.Context) error {
 	req := wingetrepo.SearchRequest{}
 	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest)
+		return wingetError(c, http.StatusBadRequest)
 	}
 
 	packages, err := h.visiblePackages(c)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return wingetError(c, http.StatusInternalServerError)
 	}
 
 	result := wingetrepo.Search(packages, req)
@@ -87,7 +93,7 @@ func (h *Handler) WinGetManifestSearch(c echo.Context) error {
 func (h *Handler) WinGetPackageManifest(c echo.Context) error {
 	packages, err := h.visiblePackages(c)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return wingetError(c, http.StatusInternalServerError)
 	}
 
 	version := c.QueryParam("Version")
@@ -109,15 +115,15 @@ func (h *Handler) WinGetPackageManifest(c echo.Context) error {
 func (h *Handler) WinGetInstaller(c echo.Context) error {
 	path, p, err := h.WinGetLibrary.InstallerPath(c.Param("id"), c.Param("version"))
 	if errors.Is(err, wingetrepo.ErrPackageNotFound) || (err == nil && p.InstallerFile != c.Param("file")) {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return wingetError(c, http.StatusNotFound)
 	}
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError)
+		return wingetError(c, http.StatusInternalServerError)
 	}
 
 	tenantIDs, _ := c.Get(tenantsContextKey).([]int)
 	if !p.VisibleTo(tenantIDs) {
-		return echo.NewHTTPError(http.StatusNotFound)
+		return wingetError(c, http.StatusNotFound)
 	}
 	return c.Attachment(path, p.InstallerFile)
 }
