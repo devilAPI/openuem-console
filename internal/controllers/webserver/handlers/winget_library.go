@@ -19,7 +19,6 @@ import (
 	"github.com/invopop/ctxi18n/i18n"
 	"github.com/labstack/echo/v4"
 	openuem_nats "github.com/open-uem/nats"
-	"github.com/open-uem/openuem-console/internal/taskfiles"
 	"github.com/open-uem/openuem-console/internal/views/deploy_views"
 	"github.com/open-uem/openuem-console/internal/views/partials"
 	"github.com/open-uem/openuem-console/internal/wingetrepo"
@@ -131,7 +130,7 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 		InstallerType:     detected.InstallerType,
 		PackageFamilyName: detected.PackageFamilyName,
 		Architecture:      firstNotEmpty(c.FormValue("library-architecture"), detected.Architecture, "neutral"),
-		InstallerFile:     taskfiles.SanitizeName(header.Filename),
+		InstallerFile:     wingetrepo.SanitizeInstallerName(header.Filename),
 		PackageIdentifier: strings.TrimSpace(c.FormValue("library-id")),
 	}
 	if extension == ".exe" {

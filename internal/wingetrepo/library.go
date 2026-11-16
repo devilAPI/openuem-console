@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -32,6 +33,7 @@ var (
 	installerFilePattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}\.(msi|exe|msix)$`)
 	// winget's manifest schema: name, underscore and the 13 characters of the publisher id
 	packageFamilyNamePattern = regexp.MustCompile(`^[A-Za-z0-9][-.A-Za-z0-9]+_[A-Za-z0-9]{13}$`)
+	unsafeNameChars          = regexp.MustCompile(`[^A-Za-z0-9._+-]+`)
 )
 
 // maxSwitchesLength is the longest installer switches winget's manifest schema allows
@@ -67,6 +69,19 @@ type Package struct {
 	Size              int64     `json:"size"`
 	TenantID          int       `json:"tenantId,omitempty"`
 	Uploaded          time.Time `json:"uploaded"`
+}
+
+// SanitizeInstallerName keeps only the base name of an uploaded installer and replaces
+// the characters that aren't safe in a path, a URL or a command line. Long names are cut
+// at the start, so the extension is kept.
+func SanitizeInstallerName(name string) string {
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	name = unsafeNameChars.ReplaceAllString(name, "_")
+	name = strings.Trim(name, "._")
+	if len(name) > 120 {
+		name = name[len(name)-120:]
+	}
+	return name
 }
 
 // Type returns the installer type, msi for packages stored before other types existed

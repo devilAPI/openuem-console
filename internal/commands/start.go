@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/open-uem/openuem-console/internal/common"
-	"github.com/open-uem/openuem-console/internal/taskfiles"
 	"github.com/open-uem/openuem-console/internal/wingetrepo"
 	"github.com/open-uem/utils"
 	"github.com/urfave/cli/v2"
@@ -66,18 +65,8 @@ func startConsole(cCtx *cli.Context) error {
 		log.Fatalf("[FATAL]: could not create commondb temp dir: %v", err)
 	}
 
-	// Create the directory for the files uploaded for tasks. They must persist, so they
-	// aren't stored in the temporary directory
-	taskFilesDir := cCtx.String("task-files-dir")
-	if taskFilesDir == "" {
-		taskFilesDir = filepath.Join(cwd, "task-files")
-	}
-	worker.TaskFiles, err = taskfiles.New(taskFilesDir)
-	if err != nil {
-		log.Fatalf("[FATAL]: could not create the task files directory: %v", err)
-	}
-
-	// Create the directory of the private winget repository, which must persist too
+	// Create the directory of the private winget repository. Its packages must persist, so
+	// they aren't stored in the temporary directory
 	wingetRepositoryDir := cCtx.String("winget-repository-dir")
 	if wingetRepositoryDir == "" {
 		wingetRepositoryDir = filepath.Join(cwd, "winget-repository")
