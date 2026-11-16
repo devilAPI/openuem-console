@@ -29,16 +29,38 @@ var (
 	// The same rules as winget's manifest schema: 2 to 8 parts separated by dots
 	packageIdentifierPattern = regexp.MustCompile(`^[^\.\s\\/:\*\?"<>\|\x01-\x1f]{1,32}(\.[^\.\s\\/:\*\?"<>\|\x01-\x1f]{1,32}){1,7}$`)
 	packageVersionPattern    = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
-	installerFilePattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}\.msi$`)
+	installerFilePattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._+-]{0,127}\.(msi|exe|msix)$`)
+	// winget's manifest schema: name, underscore and the 13 characters of the publisher id
+	packageFamilyNamePattern = regexp.MustCompile(`^[A-Za-z0-9][-.A-Za-z0-9]+_[A-Za-z0-9]{13}$`)
 )
+
+// maxSwitchesLength is the longest installer switches winget's manifest schema allows
+const maxSwitchesLength = 512
+
+// installerExtensions are the file extensions of each installer type
+var installerExtensions = map[string]string{
+	InstallerTypeMSI:      ".msi",
+	InstallerTypeEXE:      ".exe",
+	InstallerTypeInno:     ".exe",
+	InstallerTypeNullsoft: ".exe",
+	InstallerTypeBurn:     ".exe",
+	InstallerTypeMSIX:     ".msix",
+}
 
 // Package is a version of a package of the library
 type Package struct {
-	PackageIdentifier string    `json:"packageIdentifier"`
-	PackageVersion    string    `json:"packageVersion"`
-	PackageName       string    `json:"packageName"`
-	Publisher         string    `json:"publisher"`
-	ProductCode       string    `json:"productCode,omitempty"`
+	PackageIdentifier string `json:"packageIdentifier"`
+	PackageVersion    string `json:"packageVersion"`
+	PackageName       string `json:"packageName"`
+	Publisher         string `json:"publisher"`
+	ProductCode       string `json:"productCode,omitempty"`
+	// InstallerType is a winget installer type, see InstallerExtension. Packages stored
+	// before other types were supported have none and are MSI packages.
+	InstallerType string `json:"installerType,omitempty"`
+	// SilentSwitches are the arguments that install a generic exe without interaction
+	SilentSwitches string `json:"silentSwitches,omitempty"`
+	// PackageFamilyName identifies an installed MSIX package
+	PackageFamilyName string    `json:"packageFamilyName,omitempty"`
 	Architecture      string    `json:"architecture"`
 	InstallerFile     string    `json:"installerFile"`
 	InstallerSha256   string    `json:"installerSha256"`
@@ -47,15 +69,31 @@ type Package struct {
 	Uploaded          time.Time `json:"uploaded"`
 }
 
+// Type returns the installer type, msi for packages stored before other types existed
+func (p Package) Type() string {
+	if p.InstallerType == "" {
+		return InstallerTypeMSI
+	}
+	return p.InstallerType
+}
+
 // Validate checks the fields that are used in paths, URLs and winget manifests
 func (p Package) Validate() error {
+	extension, knownType := installerExtensions[p.Type()]
 	switch {
 	case !packageIdentifierPattern.MatchString(p.PackageIdentifier),
 		!packageVersionPattern.MatchString(p.PackageVersion),
 		!installerFilePattern.MatchString(p.InstallerFile),
+		!knownType,
+		!strings.EqualFold(filepath.Ext(p.InstallerFile), extension),
 		strings.TrimSpace(p.PackageName) == "",
 		strings.TrimSpace(p.Publisher) == "",
-		!validArchitectures[p.Architecture]:
+		!validArchitectures[p.Architecture],
+		// winget would run a generic exe without arguments, waiting for someone to click
+		p.Type() == InstallerTypeEXE && strings.TrimSpace(p.SilentSwitches) == "",
+		len(p.SilentSwitches) > maxSwitchesLength,
+		strings.ContainsAny(p.SilentSwitches, "\r\n\x00"),
+		p.Type() == InstallerTypeMSIX && !packageFamilyNamePattern.MatchString(p.PackageFamilyName):
 		return ErrInvalidPackage
 	}
 	return nil

@@ -72,18 +72,48 @@ func TestPackageValidate(t *testing.T) {
 	assert.NoError(t, testPackage("Example.App", "1.0").Validate())
 
 	for name, p := range map[string]Package{
-		"identifier without dot":      testPackage("App", "1.0"),
-		"identifier with traversal":   testPackage("../Example.App", "1.0"),
-		"identifier with separator":   testPackage("Example/App.X", "1.0"),
-		"version with traversal":      testPackage("Example.App", ".."),
-		"version with separator":      testPackage("Example.App", "1/0"),
-		"installer that's not an msi": func() Package { p := testPackage("Example.App", "1.0"); p.InstallerFile = "a.exe"; return p }(),
-		"installer with traversal":    func() Package { p := testPackage("Example.App", "1.0"); p.InstallerFile = "../a.msi"; return p }(),
-		"unknown architecture":        func() Package { p := testPackage("Example.App", "1.0"); p.Architecture = "mips"; return p }(),
-		"no name":                     func() Package { p := testPackage("Example.App", "1.0"); p.PackageName = " "; return p }(),
+		"identifier without dot":        testPackage("App", "1.0"),
+		"identifier with traversal":     testPackage("../Example.App", "1.0"),
+		"identifier with separator":     testPackage("Example/App.X", "1.0"),
+		"version with traversal":        testPackage("Example.App", ".."),
+		"version with separator":        testPackage("Example.App", "1/0"),
+		"installer that's not an msi":   func() Package { p := testPackage("Example.App", "1.0"); p.InstallerFile = "a.exe"; return p }(),
+		"installer with traversal":      func() Package { p := testPackage("Example.App", "1.0"); p.InstallerFile = "../a.msi"; return p }(),
+		"unknown architecture":          func() Package { p := testPackage("Example.App", "1.0"); p.Architecture = "mips"; return p }(),
+		"no name":                       func() Package { p := testPackage("Example.App", "1.0"); p.PackageName = " "; return p }(),
+		"exe without silent switches":   exePackage(InstallerTypeEXE, ""),
+		"switches on several lines":     exePackage(InstallerTypeEXE, "/S\r\n/D=C:\\"),
+		"msi installer for an exe type": func() Package { p := exePackage(InstallerTypeInno, ""); p.InstallerFile = "setup.msi"; return p }(),
+		"unknown installer type":        func() Package { p := testPackage("Example.App", "1.0"); p.InstallerType = "appx"; return p }(),
+		"msix without family name":      func() Package { p := msixPackage(); p.PackageFamilyName = ""; return p }(),
 	} {
 		assert.ErrorIs(t, p.Validate(), ErrInvalidPackage, name)
 	}
+
+	assert.NoError(t, exePackage(InstallerTypeEXE, "/S").Validate(), "generic exe with switches")
+	for _, installerType := range []string{InstallerTypeInno, InstallerTypeNullsoft, InstallerTypeBurn} {
+		assert.NoError(t, exePackage(installerType, "").Validate(), installerType+" without switches")
+	}
+	assert.NoError(t, msixPackage().Validate())
+	assert.Equal(t, InstallerTypeMSI, testPackage("Example.App", "1.0").Type(), "packages without a type are msi")
+}
+
+func exePackage(installerType, switches string) Package {
+	p := testPackage("Example.Tool", "3.1.4")
+	p.InstallerType = installerType
+	p.InstallerFile = "setup.exe"
+	p.ProductCode = ""
+	p.SilentSwitches = switches
+	return p
+}
+
+func msixPackage() Package {
+	p := testPackage("Example.Notes", "2.5.0.0")
+	p.InstallerType = InstallerTypeMSIX
+	p.InstallerFile = "notes.msix"
+	p.ProductCode = ""
+	p.PackageFamilyName = "ExampleCorp.Notes_8wekyb3d8bbwe"
+	return p
 }
 
 func TestCompareVersions(t *testing.T) {
@@ -157,4 +187,33 @@ func TestAgentToken(t *testing.T) {
 	assert.False(t, ValidAgentToken([]byte("other key"), "agent1", token), "token of another server")
 	assert.False(t, ValidAgentToken(nil, "agent1", AgentToken(nil, "agent1")), "no key")
 	assert.Equal(t, "https://console.example.com:1324/winget/agent1/"+token, SourceURL("https://console.example.com:1324", key, "agent1"))
+}
+
+func TestBuildManifestInstallerTypes(t *testing.T) {
+	installer := func(p Package) Installer {
+		return BuildManifest([]Package{p}, "https://console/installers").Data.Versions[0].Installers[0]
+	}
+
+	exe := installer(exePackage(InstallerTypeEXE, "/S /norestart"))
+	assert.Equal(t, "exe", exe.InstallerType)
+	assert.Equal(t, "machine", exe.Scope)
+	assert.Equal(t, &InstallerSwitches{Silent: "/S /norestart", SilentWithProgress: "/S /norestart"}, exe.InstallerSwitches)
+	assert.Equal(t, []AppsAndFeaturesEntry{{DisplayName: "Test App", Publisher: "Example Corp", DisplayVersion: "3.1.4"}}, exe.AppsAndFeaturesEntries,
+		"exe installers are matched with Apps & features by name and publisher")
+
+	inno := installer(exePackage(InstallerTypeInno, ""))
+	assert.Equal(t, "inno", inno.InstallerType)
+	assert.Nil(t, inno.InstallerSwitches, "winget knows Inno Setup's switches")
+
+	msix := installer(msixPackage())
+	assert.Equal(t, "msix", msix.InstallerType)
+	assert.Equal(t, "ExampleCorp.Notes_8wekyb3d8bbwe", msix.PackageFamilyName)
+	assert.Empty(t, msix.ProductCode)
+	assert.Empty(t, msix.AppsAndFeaturesEntries)
+	assert.Nil(t, msix.InstallerSwitches)
+
+	data, err := json.Marshal(installer(exePackage(InstallerTypeNullsoft, "")))
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "InstallerSwitches", "no empty switches in the manifest")
+	assert.NotContains(t, string(data), "PackageFamilyName")
 }

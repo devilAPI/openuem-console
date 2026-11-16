@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -96,10 +97,11 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 
 	header, err := c.FormFile("library-file")
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "tasks.msi_upload_no_file"), false))
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.no_file"), false))
 	}
-	if !strings.EqualFold(filepath.Ext(header.Filename), ".msi") {
-		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "tasks.msi_upload_not_msi"), false))
+	extension := strings.ToLower(filepath.Ext(header.Filename))
+	if extension != ".msi" && extension != ".exe" && extension != ".msix" {
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.not_supported"), false))
 	}
 
 	src, err := header.Open()
@@ -111,29 +113,41 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 	staged, err := h.WinGetLibrary.Stage(src)
 	if err != nil {
 		log.Printf("[ERROR]: could not save the uploaded package, reason: %v", err)
-		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "tasks.msi_upload_failed"), false))
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.upload_failed"), false))
 	}
 	defer os.Remove(staged)
 
-	properties, err := readStagedMSIProperties(staged)
+	detected, err := inspectInstaller(staged, extension)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.not_msi"), false))
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.not_"+strings.TrimPrefix(extension, ".")), false))
 	}
 
+	// Fields filled in the form replace what was read from the installer
 	p := wingetrepo.Package{
-		PackageName:       firstNotEmpty(c.FormValue("library-name"), properties["ProductName"]),
-		Publisher:         firstNotEmpty(c.FormValue("library-publisher"), properties["Manufacturer"]),
-		PackageVersion:    firstNotEmpty(c.FormValue("library-version"), properties["ProductVersion"]),
-		ProductCode:       firstNotEmpty(c.FormValue("library-product-code"), properties["ProductCode"]),
-		Architecture:      firstNotEmpty(c.FormValue("library-architecture"), "neutral"),
+		PackageName:       firstNotEmpty(c.FormValue("library-name"), detected.Name),
+		Publisher:         firstNotEmpty(c.FormValue("library-publisher"), detected.Publisher),
+		PackageVersion:    firstNotEmpty(c.FormValue("library-version"), detected.Version),
+		ProductCode:       firstNotEmpty(c.FormValue("library-product-code"), detected.ProductCode),
+		InstallerType:     detected.InstallerType,
+		PackageFamilyName: detected.PackageFamilyName,
+		Architecture:      firstNotEmpty(c.FormValue("library-architecture"), detected.Architecture, "neutral"),
 		InstallerFile:     taskfiles.SanitizeName(header.Filename),
 		PackageIdentifier: strings.TrimSpace(c.FormValue("library-id")),
+	}
+	if extension == ".exe" {
+		if t := c.FormValue("library-installer-type"); slices.Contains(wingetrepo.ExeInstallerTypes, t) {
+			p.InstallerType = t
+		}
+		p.SilentSwitches = strings.TrimSpace(c.FormValue("library-silent-switches"))
+		if p.InstallerType == wingetrepo.InstallerTypeEXE && p.SilentSwitches == "" {
+			return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.exe_needs_switches"), false))
+		}
 	}
 	if p.PackageIdentifier == "" {
 		p.PackageIdentifier = defaultPackageIdentifier(p.Publisher, p.PackageName)
 	}
-	if !strings.HasSuffix(strings.ToLower(p.InstallerFile), ".msi") {
-		p.InstallerFile += ".msi"
+	if !strings.HasSuffix(strings.ToLower(p.InstallerFile), extension) {
+		p.InstallerFile += extension
 	}
 	if c.FormValue("library-scope") != "all" {
 		p.TenantID, _ = strconv.Atoi(commonInfo.TenantID)
@@ -148,7 +162,7 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 	}
 	if err != nil {
 		log.Printf("[ERROR]: could not add the package %s to the winget repository, reason: %v", p.PackageIdentifier, err)
-		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "tasks.msi_upload_failed"), false))
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.upload_failed"), false))
 	}
 
 	if err := h.Model.SetLibraryPackageInCatalog(added.PackageIdentifier, added.PackageName); err != nil {
@@ -349,13 +363,66 @@ func (h *Handler) syncLibraryCatalog() error {
 	return nil
 }
 
-func readStagedMSIProperties(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+// installerDetails is what was read from an uploaded installer
+type installerDetails struct {
+	InstallerType     string
+	Name              string
+	Publisher         string
+	Version           string
+	ProductCode       string
+	PackageFamilyName string
+	Architecture      string
+}
+
+// inspectInstaller reads the name, publisher and version of an installer: the properties
+// of an MSI package, the version resource of an .exe, the manifest of an MSIX package
+func inspectInstaller(path, extension string) (installerDetails, error) {
+	switch extension {
+	case ".msi":
+		f, err := os.Open(path)
+		if err != nil {
+			return installerDetails{}, err
+		}
+		defer f.Close()
+		properties, err := wingetrepo.ReadMSIProperties(f)
+		if err != nil {
+			return installerDetails{}, err
+		}
+		return installerDetails{
+			InstallerType: wingetrepo.InstallerTypeMSI,
+			Name:          properties["ProductName"],
+			Publisher:     properties["Manufacturer"],
+			Version:       properties["ProductVersion"],
+			ProductCode:   properties["ProductCode"],
+		}, nil
+	case ".exe":
+		info, err := wingetrepo.ReadExeInfo(path)
+		if err != nil {
+			return installerDetails{}, err
+		}
+		// The architecture of an installer isn't the one of what it installs: 32-bit
+		// setup programs often install 64-bit applications
+		return installerDetails{
+			InstallerType: info.InstallerType,
+			Name:          info.ProductName,
+			Publisher:     info.CompanyName,
+			Version:       info.ProductVersion,
+		}, nil
+	case ".msix":
+		info, err := wingetrepo.ReadMSIXInfo(path)
+		if err != nil {
+			return installerDetails{}, err
+		}
+		return installerDetails{
+			InstallerType:     wingetrepo.InstallerTypeMSIX,
+			Name:              info.DisplayName,
+			Publisher:         info.Publisher,
+			Version:           info.Version,
+			PackageFamilyName: info.PackageFamilyName,
+			Architecture:      info.Architecture,
+		}, nil
 	}
-	defer f.Close()
-	return wingetrepo.ReadMSIProperties(f)
+	return installerDetails{}, errors.New("unsupported installer")
 }
 
 // defaultPackageIdentifier builds a winget identifier like Publisher.Name from the MSI's

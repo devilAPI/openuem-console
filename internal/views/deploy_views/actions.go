@@ -126,3 +126,8 @@ func libraryPackageValues(p wingetrepo.Package) string {
 	data, _ := json.Marshal(map[string]string{"library-id": p.PackageIdentifier, "library-version": p.PackageVersion})
 	return string(data)
 }
+
+// libraryTypeLabel returns the translation key of an installer type
+func libraryTypeLabel(installerType string) string {
+	return "library.type_" + installerType
+}

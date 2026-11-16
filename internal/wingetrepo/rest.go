@@ -197,8 +197,17 @@ type Installer struct {
 	InstallerType          string                 `json:"InstallerType"`
 	Scope                  string                 `json:"Scope"`
 	ProductCode            string                 `json:"ProductCode,omitempty"`
+	PackageFamilyName      string                 `json:"PackageFamilyName,omitempty"`
 	InstallModes           []string               `json:"InstallModes"`
+	InstallerSwitches      *InstallerSwitches     `json:"InstallerSwitches,omitempty"`
 	AppsAndFeaturesEntries []AppsAndFeaturesEntry `json:"AppsAndFeaturesEntries,omitempty"`
+}
+
+// InstallerSwitches replace winget's default switches of an installer type. Generic exe
+// installers have no default switches.
+type InstallerSwitches struct {
+	Silent             string `json:"Silent,omitempty"`
+	SilentWithProgress string `json:"SilentWithProgress,omitempty"`
 }
 
 type AppsAndFeaturesEntry struct {
@@ -214,20 +223,33 @@ func BuildManifest(versions []Package, installersURL string) ManifestResponse {
 	m := Manifest{Versions: []ManifestVersion{}}
 	for _, p := range versions {
 		m.PackageIdentifier = p.PackageIdentifier
+		// The agent installs with --scope machine, as SYSTEM
 		installer := Installer{
 			InstallerIdentifier: p.PackageIdentifier + "." + p.PackageVersion,
 			InstallerSha256:     p.InstallerSha256,
 			InstallerUrl:        fmt.Sprintf("%s/%s/%s/%s", installersURL, url.PathEscape(p.PackageIdentifier), url.PathEscape(p.PackageVersion), url.PathEscape(p.InstallerFile)),
 			Architecture:        p.Architecture,
-			InstallerType:       "msi",
+			InstallerType:       p.Type(),
 			Scope:               "machine",
 			ProductCode:         p.ProductCode,
 			InstallModes:        []string{"interactive", "silent", "silentWithProgress"},
 		}
-		if p.ProductCode != "" {
-			installer.AppsAndFeaturesEntries = []AppsAndFeaturesEntry{{
-				DisplayName: p.PackageName, Publisher: p.Publisher, DisplayVersion: p.PackageVersion, ProductCode: p.ProductCode,
-			}}
+		switch p.Type() {
+		case InstallerTypeMSIX:
+			// winget recognizes installed MSIX packages by their family name
+			installer.PackageFamilyName = p.PackageFamilyName
+			installer.ProductCode = ""
+		default:
+			if p.SilentSwitches != "" {
+				installer.InstallerSwitches = &InstallerSwitches{Silent: p.SilentSwitches, SilentWithProgress: p.SilentSwitches}
+			}
+			// winget matches installed programs (Apps & features) with these, which also
+			// lets it find the installed version of exe installers without a product code
+			if p.ProductCode != "" || p.Type() != InstallerTypeMSI {
+				installer.AppsAndFeaturesEntries = []AppsAndFeaturesEntry{{
+					DisplayName: p.PackageName, Publisher: p.Publisher, DisplayVersion: p.PackageVersion, ProductCode: p.ProductCode,
+				}}
+			}
 		}
 		m.Versions = append(m.Versions, ManifestVersion{
 			PackageVersion: p.PackageVersion,
