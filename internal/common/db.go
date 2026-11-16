@@ -231,6 +231,17 @@ func (w *Worker) StartConsoleService() {
 	if err := w.WebServer.Handler.StartWinGetRepositoryJob(); err != nil {
 		log.Printf("[ERROR]: could not start the job that registers the winget repository on agents, reason: %v", err)
 	}
+
+	// HTTPS auth server
+	w.AuthServer = authserver.New(w.Model, w.SessionManager, w.CACertPath, serverName, consolePort, authPort, w.ReverseProxyAuthPort, w.EncryptionMasterKey)
+	w.AuthServer.Handler.TaskFiles = w.TaskFiles
+	w.AuthServer.Handler.WinGetLibrary = w.WinGetLibrary
+	w.AuthServer.Handler.WinGetKey = []byte(w.JWTKey)
+
+	// The winget repository is served by the web server, which doesn't ask for client
+	// certificates, with the auth server's handlers
+	w.AuthServer.Handler.RegisterWinGetSource(w.WebServer.Router)
+
 	go func() {
 		if err := w.WebServer.Serve(":"+consolePort, w.ConsoleCertPath, w.ConsolePrivateKeyPath); err != http.ErrServerClosed {
 			log.Printf("[ERROR]: the server has stopped, reason: %v", err.Error())
@@ -238,11 +249,6 @@ func (w *Worker) StartConsoleService() {
 	}()
 	log.Println("[INFO]: console is running")
 
-	// HTTPS auth server
-	w.AuthServer = authserver.New(w.Model, w.SessionManager, w.CACertPath, serverName, consolePort, authPort, w.ReverseProxyAuthPort, w.EncryptionMasterKey)
-	w.AuthServer.Handler.TaskFiles = w.TaskFiles
-	w.AuthServer.Handler.WinGetLibrary = w.WinGetLibrary
-	w.AuthServer.Handler.WinGetKey = []byte(w.JWTKey)
 	go func() {
 		if err := w.AuthServer.Serve(":"+authPort, w.ConsoleCertPath, w.ConsolePrivateKeyPath); err != http.ErrServerClosed {
 			log.Printf("[ERROR]: the server has stopped, reason: %v", err.Error())

@@ -49,7 +49,7 @@ func TestWinGetSource(t *testing.T) {
 	key := []byte("server key")
 	h := &Handler{Model: &models.Model{Client: client}, WinGetLibrary: library, WinGetKey: key}
 	e := echo.New()
-	h.Register(e)
+	h.RegisterWinGetSource(e)
 	server := httptest.NewServer(e)
 	defer server.Close()
 
