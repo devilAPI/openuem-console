@@ -150,13 +150,47 @@ foreach ($tool in "ssh.exe", "tar.exe") {
 # --- Hosts entries ------------------------------------------------------------
 $names = "console", "nats", "ocsp" | ForEach-Object { "$_.$Domain" }
 if (-not $SkipHosts) {
-    Write-Step "Adding hosts entries for $($names -join ', ') -> $ServerIP"
     $hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
-    $pattern = "\s(" + (($names | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")(\s|$)"
-    $lines = @(Get-Content $hostsFile | Where-Object { $_ -notmatch $pattern })
-    $lines += $names | ForEach-Object { "$ServerIP $_ # openuem" }
-    Set-Content -Path $hostsFile -Value $lines -Encoding ASCII
-    ipconfig /flushdns | Out-Null
+    $current = @(Get-Content $hostsFile)
+
+    # Which addresses do the names have now? (comments ignored)
+    $mapped = @{}
+    foreach ($line in $current) {
+        $entry = @(($line -replace '#.*$', '').Trim() -split '\s+' | Where-Object { $_ })
+        for ($i = 1; $i -lt $entry.Count; $i++) {
+            if ($names -contains $entry[$i]) {
+                if (-not $mapped.ContainsKey($entry[$i])) { $mapped[$entry[$i]] = @() }
+                $mapped[$entry[$i]] += $entry[0]
+            }
+        }
+    }
+    $outdated = @($names | Where-Object { -not $mapped.ContainsKey($_) -or $mapped[$_].Count -ne 1 -or $mapped[$_][0] -ne $ServerIP })
+
+    if ($outdated.Count -eq 0) {
+        Write-Step "The hosts entries for $($names -join ', ') already point to $ServerIP"
+    } else {
+        Write-Step "Adding hosts entries for $($names -join ', ') -> $ServerIP"
+        $pattern = "\s(" + (($names | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")(\s|$)"
+        $newEntries = @($names | ForEach-Object { "$ServerIP $_ # openuem" })
+        $lines = @($current | Where-Object { $_ -notmatch $pattern }) + $newEntries
+        $text = ($lines -join "`r`n") + "`r`n"
+
+        $item = Get-Item $hostsFile
+        if ($item.IsReadOnly) { $item.IsReadOnly = $false }
+        # Antivirus software often has the hosts file open for a moment, so retry
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                [System.IO.File]::WriteAllText($hostsFile, $text, [System.Text.Encoding]::ASCII)
+                break
+            } catch {
+                if ($attempt -ge 10) {
+                    throw "Could not write $hostsFile ($($_.Exception.Message)). An antivirus may be locking or protecting it. Add these lines yourself, then run the script again:`n$($newEntries -join "`n")"
+                }
+                Start-Sleep 1
+            }
+        }
+        ipconfig /flushdns | Out-Null
+    }
 }
 
 $natsServer = "nats.$Domain"
