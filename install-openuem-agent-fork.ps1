@@ -10,11 +10,24 @@
 
     Run it again to update the agent to the latest build on the server.
 
+    Settings that aren't given are taken, in this order, from:
+      1. the last successful run on this computer (saved in
+         %ProgramData%\OpenUEM-fork\install-agent.json)
+      2. the installed agent's config (domain and ports) and the hosts entries or DNS
+         (server IP)
+      3. the defaults
+    So on a computer that already has the agent, running the script without parameters
+    updates it with the same settings.
+
     Run in PowerShell as administrator:
       powershell -ExecutionPolicy Bypass -File .\install-openuem-agent-fork.ps1
 
 .EXAMPLE
-    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com
+    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -P 2222
+
+.EXAMPLE
+    # Update with the settings of the last run
+    .\install-openuem-agent-fork.ps1
 
 .EXAMPLE
     # Download and run in one line
@@ -23,11 +36,12 @@
 [CmdletBinding()]
 param(
     # IP address of the OpenUEM server
-    [Parameter(Mandatory = $true)][string]$ServerIP,
+    [string]$ServerIP,
     # Domain used when installing the server (console.<domain>, nats.<domain>, ocsp.<domain>)
-    [Parameter(Mandatory = $true)][string]$Domain,
+    [string]$Domain,
     [string]$SshUser = "root",
-    [int]$SshPort = 22,
+    # SSH port of the server, -P like scp
+    [Alias("P")][int]$SshPort = 22,
     [string]$AgentVersion = "0.11.0",
     [int]$NatsPort = 4433,
     [int]$SftpPort = 2022,
@@ -44,10 +58,82 @@ $ProgressPreference = "SilentlyContinue"
 
 function Write-Step($message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
 
+# --- Settings -----------------------------------------------------------------
+# Settings that aren't given come from the last run, then from what is installed
+$configFile = Join-Path $env:ProgramData "OpenUEM-fork\install-agent.json"
+$rememberedSettings = "ServerIP", "Domain", "SshUser", "SshPort", "NatsPort", "SftpPort", "VncPort", "WorkDir", "SkipHosts"
+$settingSource = @{}
+foreach ($name in $rememberedSettings) {
+    $settingSource[$name] = if ($PSBoundParameters.ContainsKey($name)) { "parameter" } else { "default" }
+}
+# Sets a setting that is still at its default. Scope 1 is the script body, also when the
+# script runs as a script block (irm ... one-liner), where the script: scope is the caller's.
+function Use-Setting($name, $value, $source) {
+    if ($settingSource[$name] -eq "default" -and $null -ne $value -and "$value" -ne "") {
+        Set-Variable -Name $name -Value $value -Scope 1
+        $settingSource[$name] = $source
+    }
+}
+
+# 1. The last successful run
+if (Test-Path $configFile) {
+    try {
+        $saved = Get-Content $configFile -Raw | ConvertFrom-Json
+        foreach ($name in $rememberedSettings) { Use-Setting $name $saved.$name "last run" }
+    } catch {
+        Write-Warning "Ignoring ${configFile}: $($_.Exception.Message)"
+    }
+}
+
+# 2. The installed agent: <agent folder>\config\openuem.ini has nats.<domain>:<port> and the ports
+$installed = Get-CimInstance Win32_Service -Filter "Name='openuem-agent'" -ErrorAction SilentlyContinue
+if ($installed -and $installed.PathName -match '^"?([^"]+\.exe)') {
+    $iniFile = Join-Path (Split-Path $Matches[1]) "config\openuem.ini"
+    if (Test-Path $iniFile) {
+        foreach ($line in Get-Content $iniFile) {
+            if ($line -match '^\s*NATSServers\s*=\s*nats\.([^:,\s]+):(\d+)') {
+                Use-Setting "Domain" $Matches[1] "installed agent"
+                Use-Setting "NatsPort" ([int]$Matches[2]) "installed agent"
+            } elseif ($line -match '^\s*SFTPPort\s*=\s*(\d+)') {
+                Use-Setting "SftpPort" ([int]$Matches[1]) "installed agent"
+            } elseif ($line -match '^\s*VNCProxyPort\s*=\s*(\d+)') {
+                Use-Setting "VncPort" ([int]$Matches[1]) "installed agent"
+            }
+        }
+    }
+}
+
 # -Domain is the base domain; accept a host name like nats.<domain> too
 if ($Domain -match '^(console|nats|ocsp)\.(.+\..+)$') {
     Write-Warning "-Domain must be the base domain, using $($Matches[2]) instead of $Domain"
     $Domain = $Matches[2]
+}
+
+# 3. The server IP: the hosts entry of console.<domain> (written by this script), then DNS
+if (-not $ServerIP) {
+    $hostsPattern = if ($Domain) { '^\s*([0-9A-Fa-f:.]+)\s+console\.' + [regex]::Escape($Domain) + '(\s|$)' } else { '^\s*([0-9A-Fa-f:.]+)\s+console\.(\S+).*#\s*openuem' }
+    $hostsLine = Get-Content "$env:SystemRoot\System32\drivers\etc\hosts" -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match $hostsPattern } | Select-Object -First 1
+    if ($hostsLine -and $hostsLine -match $hostsPattern) {
+        Use-Setting "ServerIP" $Matches[1] "hosts file"
+        if (-not $Domain) { Use-Setting "Domain" $Matches[2] "hosts file" }
+    }
+}
+if (-not $ServerIP -and $Domain) {
+    try {
+        $address = [System.Net.Dns]::GetHostAddresses("console.$Domain") |
+            Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1
+        if ($address) { Use-Setting "ServerIP" $address.IPAddressToString "DNS" }
+    } catch { }
+}
+
+if (-not $ServerIP -or -not $Domain) {
+    throw "The server IP and domain are unknown on this computer. Run the script once with -ServerIP <ip> -Domain <domain>; later runs reuse them"
+}
+
+Write-Step "Settings"
+foreach ($name in $rememberedSettings) {
+    Write-Host ("    {0,-10} {1,-24} ({2})" -f $name, (Get-Variable $name -ValueOnly), $settingSource[$name])
 }
 
 # --- Checks -------------------------------------------------------------------
@@ -107,6 +193,16 @@ foreach ($file in $remoteFiles) {
     Copy-Item (Join-Path $WorkDir $file) $WorkDir -Force
 }
 Remove-Item (Join-Path $WorkDir "certificates"), (Join-Path $WorkDir "agent-builds") -Recurse -Force -ErrorAction SilentlyContinue
+
+# The settings work: remember them for the next run
+$config = [ordered]@{}
+foreach ($name in $rememberedSettings) {
+    $value = Get-Variable $name -ValueOnly
+    if ($value -is [System.Management.Automation.SwitchParameter]) { $value = $value.IsPresent }
+    $config[$name] = $value
+}
+New-Item -ItemType Directory -Force -Path (Split-Path $configFile) | Out-Null
+$config | ConvertTo-Json | Set-Content -Path $configFile -Encoding UTF8
 
 # --- Official agent -----------------------------------------------------------
 $service = Get-Service openuem-agent -ErrorAction SilentlyContinue

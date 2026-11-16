@@ -456,9 +456,10 @@ if [ -n "$AGENTS_DIR" ]; then
 
 Agent binaries built from the fork: ${INSTALL_DIR}/agent-builds/latest/
   Windows, all in one step (PowerShell as administrator, on a computer without
-  Defender ASR policies that block unsigned programs). Run it again to update:
+  Defender ASR policies that block unsigned programs):
     Set-ExecutionPolicy -Scope Process Bypass -Force; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1))) -ServerIP ${SERVER_IP} -Domain ${OPENUEM_DOMAIN}
-    Add -SshPort <port> if SSH doesn't listen on port 22.
+    Add -P <port> if SSH doesn't listen on port 22. To update later, run the same
+    line without parameters: the settings of the last run are reused.
 
   Or install the official OpenUEM agent first, then replace its binary:
   Windows (PowerShell as administrator):
