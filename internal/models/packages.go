@@ -68,8 +68,10 @@ func (m *Model) CountPackages(packageName string, f filters.DeployPackageFilter)
 	return query.Count(context.Background())
 }
 
+// SearchAllWingetPackages searches the packages of winget's community repository and of
+// the console's own winget repository
 func (m *Model) SearchAllWingetPackages(packageName string) ([]*ent.SoftwarePackage, error) {
-	return m.Client.SoftwarePackage.Query().Where(softwarepackage.NameContainsFold(packageName), softwarepackage.Source("winget")).All(context.Background())
+	return m.Client.SoftwarePackage.Query().Where(softwarepackage.NameContainsFold(packageName), softwarepackage.SourceIn("winget", LibraryPackageSource)).All(context.Background())
 }
 
 func (m *Model) SearchAllFlatpakPackages(packageName string) ([]*ent.SoftwarePackage, error) {

@@ -23,6 +23,13 @@ func (m *Model) EnabledWindowsAgentIDs(tenantID int) ([]string, error) {
 	return query.IDs(context.Background())
 }
 
+// IsLibraryPackage reports if a package id is one of the winget repository's packages
+func (m *Model) IsLibraryPackage(packageID string) (bool, error) {
+	return m.Client.SoftwarePackage.Query().
+		Where(softwarepackage.PackageID(packageID), softwarepackage.Source(LibraryPackageSource)).
+		Exist(context.Background())
+}
+
 // SetLibraryPackageInCatalog adds or renames a package of the winget repository in the
 // catalog, so the package search finds it
 func (m *Model) SetLibraryPackageInCatalog(packageID, name string) error {

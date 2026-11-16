@@ -154,7 +154,12 @@ templ SearchPacketResult(wingetPackages []*ent.SoftwarePackage) {
 										<p>
 											{ item.Name }
 										</p>
-										<p class="uk-text-muted uk-text-italic">{ item.PackageID }</p>
+										<p class="uk-text-muted uk-text-italic">
+											{ item.PackageID }
+											if item.Source == "openuem" {
+												· OpenUEM
+											}
+										</p>
 									</div>
 								</div>
 							</button>

@@ -2338,13 +2338,13 @@ func (h *Handler) CreateWindowsTaskConfig(t *openuem_ent.Task) (*wingetcfg.WinGe
 
 	switch t.Type {
 	case task.TypeWingetInstall:
-		installPackage, err := wingetcfg.InstallPackage(taskID, t.PackageName, t.PackageID, "winget", t.PackageVersion, t.PackageLatest)
+		installPackage, err := wingetcfg.InstallPackage(taskID, t.PackageName, t.PackageID, h.wingetPackageSource(t.PackageID), t.PackageVersion, t.PackageLatest)
 		if err != nil {
 			return nil, err
 		}
 		cfg.AddResource(installPackage)
 	case task.TypeWingetDelete:
-		uninstallPackage, err := wingetcfg.UninstallPackage(taskID, t.PackageName, t.PackageID, "winget", t.PackageVersion, t.PackageLatest)
+		uninstallPackage, err := wingetcfg.UninstallPackage(taskID, t.PackageName, t.PackageID, h.wingetPackageSource(t.PackageID), t.PackageVersion, t.PackageLatest)
 		if err != nil {
 			return nil, err
 		}

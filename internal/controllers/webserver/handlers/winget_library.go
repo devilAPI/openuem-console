@@ -248,6 +248,19 @@ func (h *Handler) winGetSourceConfig(agentID string) openuem_nats.WinGetSourceCo
 	}
 }
 
+// wingetPackageSource is the winget source a profile task installs a package from: the
+// console's repository for its own packages, winget's community repository otherwise
+func (h *Handler) wingetPackageSource(packageID string) string {
+	isLibraryPackage, err := h.Model.IsLibraryPackage(packageID)
+	if err != nil {
+		log.Printf("[ERROR]: could not check if %s is a package of the winget repository, reason: %v", packageID, err)
+	}
+	if isLibraryPackage {
+		return WinGetSourceName
+	}
+	return "winget"
+}
+
 // consoleBaseURL is the address of the console's web server as the computers reach it.
 // The winget repository is served there because winget can't connect to the auth
 // server, which asks for a client certificate.
