@@ -52,6 +52,18 @@ info() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mWARNING: %s\033[0m\n' "$*" >&2; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Runs a command up to 3 times. Downloads from the Go module proxy and Docker Hub fail
+# now and then ("stream error", "connection reset"); a second try usually works.
+retry() {
+    local attempt
+    for attempt in 1 2 3; do
+        "$@" && return 0
+        [ "$attempt" = 3 ] && return 1
+        warn "attempt $attempt of 3 failed, trying again in 20 seconds"
+        sleep 20
+    done
+}
+
 # Ask a question even when the script is piped into bash
 ask() {
     local prompt="$1" default="$2" answer=""
@@ -308,7 +320,8 @@ fi
 # ----------------------------------------------------------------------------
 CONSOLE_COMMIT="$(git -C "$INSTALL_DIR/src/openuem-console" rev-parse --short HEAD)"
 info "Building the console image from ${CONSOLE_REPO} (${CONSOLE_BRANCH} @ ${CONSOLE_COMMIT}), this takes a few minutes"
-docker build --pull -t "${FORK_IMAGE}:${CONSOLE_COMMIT}" -t "${FORK_IMAGE}:latest" "$INSTALL_DIR/src/openuem-console"
+retry docker build --pull -t "${FORK_IMAGE}:${CONSOLE_COMMIT}" -t "${FORK_IMAGE}:latest" "$INSTALL_DIR/src/openuem-console" ||
+    die "the console image could not be built, see the output above. If it's a download error, run the script again"
 
 # ----------------------------------------------------------------------------
 # Start OpenUEM
@@ -355,7 +368,7 @@ if [ "$BUILD_AGENTS" = "1" ]; then
     AGENTS_DIR="$INSTALL_DIR/agent-builds/$AGENT_COMMIT"
     info "Building the agent binaries from ${AGENT_REPO} (${AGENT_BRANCH} @ ${AGENT_COMMIT})"
     mkdir -p "$AGENTS_DIR"
-    docker run --rm \
+    retry docker run --rm \
         -v "$INSTALL_DIR/src/openuem-agent:/src:ro" -v "$AGENTS_DIR:/out" \
         -v openuem-fork-gocache:/root/.cache -v openuem-fork-gomod:/go/pkg/mod \
         -w /src -e CGO_ENABLED=0 golang:1.26 sh -c '
@@ -364,7 +377,8 @@ if [ "$BUILD_AGENTS" = "1" ]; then
             GOOS=linux GOARCH=amd64 go build -trimpath -o /out/linux-amd64/openuem-agent ./internal/service/linux
             GOOS=linux GOARCH=arm64 go build -trimpath -o /out/linux-arm64/openuem-agent ./internal/service/linux
             GOOS=darwin GOARCH=arm64 go build -trimpath -o /out/darwin-arm64/openuem-agent ./internal/service/mac
-            GOOS=darwin GOARCH=amd64 go build -trimpath -o /out/darwin-amd64/openuem-agent ./internal/service/mac'
+            GOOS=darwin GOARCH=amd64 go build -trimpath -o /out/darwin-amd64/openuem-agent ./internal/service/mac' ||
+        die "the agents could not be built, see the output above. If it's a download error, run the script again"
     ln -sfn "$AGENTS_DIR" "$INSTALL_DIR/agent-builds/latest"
 fi
 
