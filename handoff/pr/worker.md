@@ -42,6 +42,8 @@ runtime stage is unchanged.
   library package and one for `7zip.7zip`, was requested over NATS (`wingetcfg.profiles`)
   with the agent certificate. The answer has `source: OpenUEM` for the first and
   `source: winget` for the second.
+- On a Windows 11 endpoint, the same profile installed both packages: the library's
+  Notepad++ from the source `OpenUEM` and `voidtools.Everything` from `winget`.
 
 ## Merge order
 

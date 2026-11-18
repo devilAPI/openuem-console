@@ -7,7 +7,6 @@ The agent can now:
 - update several packages in one run, started directly or queued in JetStream for computers that are offline,
 - find and update packages installed for the logged-in users on Windows,
 - report the status of its last run,
-- download MSI packages uploaded to the console for tasks, authenticating with the agent certificate,
 - register the console's private winget repository on Windows, so packages uploaded to the console's Software library are installed and updated with winget.
 
 It also fixes two existing bugs that made failed winget updates look successful, and the logging of failed PowerShell script tasks.
@@ -32,7 +31,7 @@ It also fixes two existing bugs that made failed winget updates look successful,
 The request/reply subjects need NATS permissions, which the openuem-cert-manager PR adds.
 
 ### Listing updates
-- **Windows:** `winget upgrade` runs as SYSTEM and, through the user sessions (see below), as each logged-in user. Packages found only in a user session are reported as `scope: user` with the user names. If the SYSTEM listing fails partially, user sessions are skipped, so machine-wide packages can't be mistaken for user-scoped ones.
+- **Windows:** `winget upgrade` runs as SYSTEM and, through the user sessions (see below), as each logged-in user with `--scope user`. Packages found in a user session are reported as `scope: user` with the user names. Without the scope, a user's winget would also list machine-wide programs, and one that the user's sources match with another package than SYSTEM's (e.g. a library package, whose source is only registered for SYSTEM) would be updated as the user's. If the SYSTEM listing fails partially, user sessions are skipped, so machine-wide packages can't be mistaken for user-scoped ones.
   - The output is a localized table, so columns are located by their position in the header (honouring East Asian wide characters), not by their names.
   - Footers, progress spinners and the "require explicit targeting" table are ignored.
   - Truncated ids (`…`) are skipped, as they can't be targeted.
@@ -56,22 +55,14 @@ Unlike `RunAsUser`, which borrows the token of the first `explorer.exe` it finds
   - delivered again 10 minutes later if a run is in progress.
 - **Inventory:** a report is sent after each run, so the console shows the new versions.
 
-### MSI packages uploaded to the console
-MSI task paths of the form `https://<console>:<auth port>/agent-files/<profile>/<sha256>/<name>` are downloaded by the agent before msiexec runs:
-- **Authentication:** the agent presents the agent certificate and sends its id in `X-OpenUEM-Agent`. The console only serves the file to agents the profile applies to.
-- **Trust:** OpenUEM's CA plus the system's CAs, for consoles behind a reverse proxy with a public certificate.
-- **Verification:** the download must match the SHA-256 hash in the URL.
-- **Local file:** saved as `<hash>.msi`, a name that's safe on a command line, and removed after msiexec ran.
-
-Other paths (URLs, shares, local paths) are passed to msiexec as before.
-
 ### Private winget repository (Windows)
 
-The console hosts a winget REST source with the MSI packages uploaded to its Software library (see the console PR). Computers only need outbound HTTPS to the console; nothing is pushed to them.
+The console hosts a winget REST source with the packages uploaded to its Software library (see the console PR). Computers only need outbound HTTPS to the console; nothing is pushed to them.
 
-- **Registration:** on `agent.wingetsource.<uuid>`, the agent runs `winget source remove` and `winget source add --name OpenUEM --arg <url> --type Microsoft.Rest --accept-source-agreements --disable-interactivity`.
+- **Registration:** on `agent.wingetsource.<uuid>`, the agent runs `winget source remove` and `winget source add --name OpenUEM --arg <url> --type Microsoft.Rest --trust-level trusted --accept-source-agreements --disable-interactivity`. If that fails, the matching lines of winget's own log are added to the error.
+- **Trusted source:** winget checks installers of untrusted sources with `IAttachmentExecute`, which fails without an interactive session: as SYSTEM, every install from the repository ended with `0x8A150001` right after "Installer hash verified". The repository is the console's own, served over HTTPS, and winget still verifies each installer's SHA-256.
 - **Certificate:** winget needs a certificate it trusts. With `TrustCA`, which the console sets when it has no reverse proxy with a public certificate, the agent first adds the OpenUEM CA to the machine's trusted root store with `certutil -addstore -f Root`.
-- **No unnecessary runs:** the last registered source is kept in `winget_source.json` (mode 0600, it contains the agent's token URL). The console sends the registration every 30 minutes, and winget only runs when the name, URL or CA setting changed or the last registration failed.
+- **No unnecessary runs:** the last registered source is kept in `winget_source.json` (mode 0600, it contains the agent's token URL). The console sends the registration every 30 minutes, and winget only runs when the name, URL or CA setting changed, the last registration failed, or the source was registered before it was trusted.
 - **Other systems** reply and ignore the message.
 
 ## Bug fixes
@@ -81,10 +72,11 @@ The console hosts a winget REST source with the MSI packages uploaded to its Sof
 - **Packages not installed machine-wide reported as failed.** When no scope is given, the agent now tries the logged-in users' sessions. If nobody has the package, it's reported as not installed instead of failed. This matters when a package is updated on many computers from the console.
 - **Empty reason for failed PowerShell script tasks.** The logged reason was the output of the previous `Set-ExecutionPolicy` command, which is empty. It's now what the script wrote.
 - **Package ids are validated** before they're passed to a package manager: not empty, no leading `-`, no whitespace or shell metacharacters.
+- **winget.exe of an App Installer update that isn't complete.** `locateWinGet` took the last `DesktopAppInstaller` folder in name order. While App Installer updates itself, the new version's folder exists with an empty `winget.exe` (paused for SYSTEM), and every winget command failed with "%1 is not a valid Win32 application". It now takes the newest version, compared as numbers, whose `winget.exe` can run.
 
 ## Compatibility and upgrade notes
 
-- **winget 1.4 or newer** is required (`--disable-interactivity`).
+- **winget 1.4 or newer** is required (`--disable-interactivity`), and a version that knows `source add --trust-level` for the private repository (tested with winget 1.11).
 - **Unknown messages:** existing consoles don't send the new messages. New consoles talking to old agents get "no responders", and the console reports it.
 - **Timeouts:**
   - Listing runs with a 3-minute timeout per invocation (SYSTEM and each user), so a full listing stays within the console's timeout.
@@ -99,31 +91,31 @@ The console hosts a winget REST source with the MSI packages uploaded to its Sof
 - **flatpak and Homebrew parsers:** including Homebrew warnings around the JSON and an old string format of `installed_versions`.
 - **Package id validation.**
 - **Run tracker:** concurrent start, copies, interrupted runs, errors.
-- **MSI downloads:** URL detection, verified download (hash mismatch, HTTP errors, no leftovers), extension handling.
-- **winget source state:** registration is skipped when nothing changed and retried after a failure.
+- **winget source:** the `source add` arguments; registration is skipped when nothing changed, retried after a failure, and repeated once for sources registered before they were trusted.
+- **Locating winget.exe:** newest version compared as numbers, empty or missing `winget.exe` and other architectures skipped.
 
 ### Builds
 `GOOS=windows|linux|darwin go vet ./...` and `go test ./...` pass.
 
 ### Manual tests
-Tested on a Windows 11 endpoint with a Docker deployment:
-- [x] available updates listed on the computer's Software updates page
-- [x] update all software run from the console
-- [x] a PowerShell script task runs
+Tested on a Windows 11 endpoint (build 26300, winget 1.11) with a Docker deployment:
+- [x] available updates listed on the computer's Software updates page, machine-wide and per user
+- [x] update all software run from the console, including a per-user app (Windows Terminal) updated in the user's session
+- [x] the OpenUEM winget source is registered, and a library package is found, installed, updated and uninstalled with winget (MSI, Inno Setup, NSIS, setup .exe with switches)
+- [x] the agent restarted during a run reports it as interrupted
+- [x] an update requested while the computer was shut down runs when it starts
+- [x] a package that isn't installed is reported as not installed, not as failed
+- [x] a failing PowerShell task shows the script's error
+- [x] winget keeps working while App Installer updates itself
 
 End to end with the console, NATS and a Linux agent in containers:
 - [x] the agent connects, is admitted and its subscriptions are accepted
 - [x] Update all software on an online computer starts a run, and the status page shows it
 - [x] an update requested while the computer was offline runs once when it connects
 
-Still to be verified on real endpoints before merging:
-- [ ] the OpenUEM winget source is registered (`winget source list`), and a library package is found, installed, updated and uninstalled with winget
-- [ ] a per-user app is listed with its user and updated in the user's session
-- [ ] the agent restarted during a run reports it as interrupted
-- [ ] an uploaded MSI is installed through a task
-- [ ] a failing PowerShell task shows the script's error
+Linux was tested without flatpak installed (nothing to update). flatpak updates and macOS (Homebrew) are covered by unit tests only.
 
-Linux (flatpak) and macOS (Homebrew) are covered by unit tests only.
+Known limitation: a per-user package whose update needs administrator rights (e.g. App Installer, whose Windows App Runtime dependency asks for elevation) fails in the user's session; the error says so.
 
 ## Merge order
 
@@ -137,7 +129,7 @@ Linux (flatpak) and macOS (Homebrew) are covered by unit tests only.
 - [x] Conventional commit title
 - [x] Builds and vets on Windows, Linux and macOS
 - [x] Unit tests added
-- [x] Tested on a Windows endpoint (see the manual tests above for what is still to be verified)
+- [x] Tested on a Windows endpoint
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 

@@ -1,146 +1,124 @@
 # Test plan: software updates + private winget repository
 
-What still needs a real Windows computer. Everything under "Already verified" was tested
-end to end in containers and doesn't need repeating.
+What had to be tested on a real Windows computer, with the results of the run on
+2026-11-18. Everything was tested end to end, unattended, on local VMs (see "Test lab"
+below): a Debian 13 server installed with `install-openuem-fork.sh` and a Windows 11 Pro
+client (build 26300, winget 1.11) installed with `install-openuem-agent-fork.ps1`, plus a
+Linux agent on the server as a second computer. The console was driven with Playwright.
 
-Tick the boxes as you go. The PR descriptions have the same open items, so whatever you
-tick here can be ticked there too.
+Bugs found on the way were fixed, pushed, and tested again on the VMs (see HANDOFF.md,
+"Fixed after testing on Windows"). All boxes below were ticked with the fixed builds.
 
-## 0. Setup (done)
+## 0. Setup
 
 - [x] Server summary prints without errors, console reachable
 - [x] Computer shows "Agent is online"
 - [x] OpenUEM CA is trusted on the VM
 - [x] Ports 1323 (console) and 8000 (OCSP) reachable from the VM
+- [x] Server update (running the script again) keeps settings, certificates and data, and
+      builds the agents worker from the fork
+- [x] Windows agent script without parameters reuses the last settings; `.official` keeps
+      the official binary across updates
 
 Useful on the VM:
 - Agent log: `C:\Program Files\OpenUEM Agent\logs\openuem-log.txt`
 - Source state: `C:\Program Files\OpenUEM Agent\winget_source.json`. It's only written
-  after a **successful** registration, so it's missing while registration fails.
+  after a **successful** registration, and now records `"trusted": true`.
+- winget's logs as SYSTEM: `C:\Windows\Temp\WinGet\defaultState\WinGet-*.log`
 
-## Update first
-
-**Before that, once:** fork https://github.com/open-uem/openuem-worker to `devilAPI` (like the
-other repositories) and tell me, so I can push its branch. Without the fork, the server
-script keeps the official agents worker and prints a warning; everything except the profile
-test in step 2 works anyway.
-
-1. Server, as root (also builds the agents worker from the fork once it exists):
-
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-fork.sh | bash
-   ```
-
-2. Windows VM, PowerShell as administrator. No parameters needed, the last settings are
-   reused. The new agent writes winget's own error lines to its log when registration fails.
-
-   ```powershell
-   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1)))
-   ```
-
-- [ ] Server update finished; it printed whether the agents worker was built from the fork
-- [ ] VM: "OpenUEM agent service: Running"
-
-## 1. Private winget repository (most important)
+## 1. Private winget repository
 
 ### Registration
-Your last log only had attempts from **before** the server update (15:08 and 15:28; the
-update restarted NATS at 15:33), so the fix (repository on port 1323) hasn't been tried yet.
+- [x] Agent log: `the winget source OpenUEM of the console has been registered` (on admission)
+- [x] `winget_source.json` exists and its `url` starts with `https://console.<domain>:1323/winget/`
+- [x] Clicking Register again: "registered on 1 of 1 computers", no second "registered"
+      line (winget isn't run)
+- [x] An agent that registered the source before it was trusted registers it again once
 
-1. Deploy → Software library → **Register on this organization's computers now**.
-- [ ] Agent log: `the winget source OpenUEM of the console has been registered`
-- [ ] `winget_source.json` exists and its `url` starts with `https://console.<domain>:1323/winget/`
-- [ ] Clicking Register again: no second "registered" line (nothing changed, winget isn't run)
+### MSI: upload, install, update, uninstall (7-Zip 24.08 / 24.09)
+- [x] Name, publisher, version 24.08 and identifier filled in from the MSI; Type "MSI".
+      The identifier is `IgorPavlov.7ZipX64Edition` (without the version)
+- [x] 7-Zip 24.08 gets installed from Deploy > Install (row with the OpenUEM badge)
+- [x] The computer's Deploy tab shows the deployment as installed
+- [x] After uploading 24.09: Software updates lists 7-Zip, installed 24.08, available
+      24.09, source OpenUEM, all users
+- [x] Updating it: 7-Zip is 24.09 afterwards
+- [x] Update status shows the result for the VM
+- [x] Deploy > Uninstall removes it
 
-If it fails, the error line in the agent log now continues with `winget's log (...)` and the
-lines that explain it (an HRESULT like `80072F8F` or `80072F0C`). Send me that part.
+### EXE and MSIX
+- [x] Inno Setup (Inno Setup 7.1.1) and NSIS (Notepad++ 8.7) detected with "Detect";
+      name, publisher and version filled in
+- [x] Deploy > Install of each one installs it silently on the VM
+- [x] Uninstall works
+- [x] A setup .exe without switches (7-Zip's own `7z2409-x64.exe`) is refused with the
+      message asking for silent switches; with `/S` it's accepted and installs
+- [ ] Optional **.msix**: not tested on Windows. No small unbundled .msix was at hand
+      (PowerShell's releases only ship bundles now) and a self-built one would need a
+      trusted signing certificate. Parsing and manifests are covered by unit tests.
 
-Note: the agent registers the source for SYSTEM, which runs the deployments. winget keeps
-sources per user, so `winget source list` in your own PowerShell may not show it. That's
-expected.
-
-### MSI: upload, install, update, uninstall
-Get two versions of one MSI, e.g. 7-Zip from 7-zip.org: `7z2408-x64.msi` (24.08) and
-`7z2409-x64.msi` (24.09). Uninstall 7-Zip from the VM first if it's there.
-
-2. Software library: choose `7z2408-x64.msi`, leave every field empty, Upload.
-- [ ] Name, publisher, version 24.08 and identifier filled in from the MSI; Type "MSI"
-3. Deploy → Install, search `7-Zip`, pick the row with the **OpenUEM** badge, select the VM.
-- [ ] 7-Zip 24.08 gets installed (Apps & features)
-- [ ] The computer's Deploy tab shows the deployment as installed
-4. Software library: upload `7z2409-x64.msi`. Then Computer → Deploy → **Software updates** →
-   Check for updates.
-- [ ] 7-Zip listed, installed 24.08, available 24.09
-- [ ] Update it (or Update all software): 7-Zip is 24.09 afterwards
-- [ ] Update status shows "1 updated" for the VM
-5. Deploy → Uninstall, search 7-Zip, select the VM.
-- [ ] 7-Zip removed
-
-### EXE and MSIX (new)
-6. Upload an **Inno Setup** installer (e.g. WinSCP or Git for Windows) and an **NSIS**
-   installer (e.g. Notepad++ or VLC). Leave the type on "Detect".
-- [ ] Type shows "Inno Setup" / "NSIS (Nullsoft)"; name, publisher and version filled in
-- [ ] Deploy → Install of each one installs it silently on the VM
-- [ ] Uninstall works
-7. Upload some other setup .exe without switches.
-- [ ] Refused with the message asking for silent switches; with the right switches
-      (e.g. `/S` or `/quiet`) it's accepted and installs
-8. Optional: an **.msix** package (not .msixbundle).
-- [ ] Name, publisher, version and architecture read from it; Deploy → Install installs it
-
-### Organization isolation (needs a second organization)
-9. Create a second organization, switch to it, upload any installer as "This organization".
-- [ ] It isn't installable on the VM (the VM's organization doesn't see it)
+### Organization isolation
+- [x] A package uploaded in a second organization isn't installable on the VM: the
+      repository answers 204 (search, manifest) and 404 (installer)
+- [x] It isn't offered in the first organization's Deploy > Install search nor in its
+      profiles' task search (it was before the fix)
 
 ### Delete
-10. Software library: delete the uploaded versions.
-- [ ] Gone from the list and from Deploy → Install search
+- [x] Deleted versions are gone from the list and from Deploy > Install search
 
-## 2. Profiles with library packages (new, needs the worker fork)
+## 2. Profiles with library packages (worker fork)
 
-This replaces the MSI upload in tasks, which will be removed once this works.
+- [x] The task search shows library packages with "· OpenUEM" after the identifier, for
+      the profile's organization only
+- [x] The profile (run with the computer's "Execute profile" button) installs the
+      library package (Notepad++ from source OpenUEM)
+- [x] A task with a community package (`voidtools.Everything`) still installs from winget
 
-11. Profiles → a profile that applies to the VM → new task of the winget package install type →
-    search the name of a library package.
-- [ ] The search shows it with "· OpenUEM" after its identifier
-- [ ] Save; on the VM's next profile run (every 30 minutes), the package is installed
-- [ ] A task with a normal community package (e.g. `7zip.7zip`) still installs from winget
+## 3. Software updates
 
-## 3. Software updates (still open from the first round)
-
-- [ ] **Per-user app:** install something just for your user (e.g. Spotify or the VS Code *user*
-      installer, an older version). While you're logged in, Software updates lists it with
-      your user name, and updating it works.
-- [ ] **Interrupted run:** start Update all software with several updates, restart the
-      "OpenUEM Agent" service during the run. Update status then shows "Failed: the update run was interrupted".
-- [ ] **Offline computer on Windows:** shut the VM down, Update all software → listed as
-      offline/queued. Start the VM → the run starts by itself, Update status shows the result.
-- [ ] **Update tab** (Deploy → Update): update one package on the VM. If you have a second
-      computer without that package, it must not be reported as failed.
+- [x] **Per-user app:** Windows Terminal and App Installer are listed as "User" with the
+      user name; Windows Terminal was updated in the user's session. App Installer fails
+      there because its dependency needs elevation (winget limitation, clear error).
+- [x] **Machine-wide program matched differently by the user's sources** (7-Zip MSI from
+      the library) is only listed once, machine-wide (it was listed as a user package
+      before the fix)
+- [x] **Interrupted run:** restarting the "OpenUEM Agent" service during the run →
+      Update status "Failed: the update run was interrupted"
+- [x] **Offline computer on Windows:** VM shut down, Update all software → "Offline, the
+      update will start when it connects"; after booting, the run started by itself and
+      updated PuTTY (Update status "1 updated, 0 failed, 1 already up to date")
+- [x] **Update tab** (Deploy > Update): PuTTY updated; Firefox (not installed) is
+      reported as not installed, not as failed. The Update tab only offers computers
+      of the package manager's OS, so the "second computer" case was tested with a
+      package the VM doesn't have.
+- [x] Linux computer without flatpak: Update all → "Nothing to update"
 
 ## 4. Tasks
 
-- [ ] **Failing PowerShell task:** a script with `Write-Error "boom"; exit 1` shows "boom"
-      in the task's error.
+- [x] **Failing PowerShell task:** `Write-Error "boom"; exit 1` (loaded with "Load the
+      script from a file") shows "boom" in the profile's report
 
 ## 5. Regression checks
 
-- [ ] Normal winget install/uninstall from the community source still works
-- [ ] Login with the admin certificate (directly on port 1323; behind a reverse proxy if you use one)
-- [ ] Pages with an organization/site selected (URLs with `/tenant/<id>/site/<id>/...`)
-      work for Deploy, Update status and Software library
+- [x] Normal winget install/uninstall from the community source (WinMerge)
+- [x] Login with the admin certificate directly on the auth port (302 to the dashboard);
+      no certificate and a forged `Client-Cert` header are refused
+- [ ] Login behind a reverse proxy: not tested (no reverse proxy in the lab)
+- [x] Pages with an organization/site selected (`/tenant/<id>/...` and
+      `/tenant/<id>/site/<id>/...`) work for Install, Update, Update all, Update status
+      and Software library
 
-## Already verified (containers, Linux agent, browser automation)
+## Test lab
 
-- Agent admission, NATS permissions, no violations
-- Software updates page reaches the agent
-- Update all: online start, offline queued, queued run executed once after reconnect,
-  Update status for each state, "Nothing to update"
-- Software library: MSI, Inno EXE, generic EXE (refused without switches, accepted with
-  them) and MSIX uploads with an empty form, metadata read from the files
-- winget REST source over HTTPS on port 1323, which doesn't ask for a client certificate
-  (1324 does): wrong token 401, not admitted 403, search, manifest, installer download
-  with matching SHA-256; MSI, EXE, Inno and MSIX manifests valid against Microsoft's API
-  spec
-- Agents worker: a profile with a library package and a community package is sent with
-  `source: OpenUEM` and `source: winget`
+Local QEMU VMs without root (user-mode networking for internet, a QEMU multicast socket
+as the LAN between the VMs):
+- **Server:** Debian 13 genericcloud image with a cloud-init seed, 4 GB RAM.
+- **Windows:** unattended install from the Windows 11 ISO with an `autounattend.xml` on a
+  second CD (TPM/Secure Boot checks bypassed with `LabConfig`, local admin, OpenSSH
+  server and a static LAN address set up at first logon), 6 GB RAM, SATA disk and
+  e1000e NICs (no extra drivers). Start it with `-rtc base=localtime`, or the clock is an
+  hour off after a reboot.
+- Commands as SYSTEM on Windows run through a scheduled task.
+- The console was driven with Playwright (Chromium, `--host-resolver-rules` for the
+  domain). Playwright's client certificates don't work with that mapping, so the
+  certificate login was tested with curl.

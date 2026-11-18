@@ -7,7 +7,7 @@ pull request.
 | File | What it is |
 |---|---|
 | `HANDOFF.md` | This document |
-| `TEST_PLAN.md` | What still has to be tested on a real Windows computer, with ticks so far |
+| `TEST_PLAN.md` | The Windows test plan with the results of the VM test run (2026-11-18) |
 | `pr/*.md` | Pull request descriptions (nats, cert-manager, agent, console, worker) and the feature request issue (`issue.md`) |
 | `worker-patches/*.patch` | The openuem-worker commits as patches (the fork's `software-updates` branch has them too) |
 | `../install-openuem-fork.sh` | Installs or updates the server (Debian 13, Docker) with the fork |
@@ -30,7 +30,7 @@ Upstream OpenUEM could only update one package on one computer at a time. The fo
    - **Registration:** Windows agents register the source automatically, as `OpenUEM`. This happens on admission, every 30 minutes, and with a button.
    - **Deploy integration:** library packages show up in Deploy → Install search (with an "OpenUEM" badge). They're installed, updated and uninstalled with winget like any other package, and only computers of the package's organization see them.
    - **Profiles:** profile winget tasks can pick library packages (needs the agents-worker change, see below).
-3. **MSI upload for profile tasks** (`/agent-files` on the auth server). It's **superseded by 2.** and its removal is ready on separate branches (see 2.3).
+3. ~~MSI upload for profile tasks~~ (`/agent-files` on the auth server): **removed**, superseded by 2. once a profile installed a library package on Windows (`remove-task-uploads` is merged).
 4. **Smaller fixes along the way:**
    - the console Dockerfile (Go toolchain, `$GOPATH`) and the worker Dockerfile;
    - the Homebrew type check;
@@ -49,19 +49,19 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 |---|---|
 | `feature/bulk-software-updates` | Development history. **The install scripts build these**, so this is what runs on the test server. |
 | `software-updates` | **PR branches**: one squashed commit per feature step, on top of upstream `main`. Fixes are cherry-picked here from the feature branch. Their tree equals the feature branch apart from the `go.mod`/`go.sum` pins. |
-| `remove-task-uploads` | Removal of the MSI task upload (item 3), on top of the feature branch. **Not merged yet**, see "Next steps". |
+| `remove-task-uploads` | Removal of the MSI task upload (item 3). **Merged** into the feature branches and added as a commit to the PR branches; the branch can be deleted. |
 | `install-script` (console repo only) | Install scripts and this handoff |
 
 ### 2.2 Current heads
 
-| Repository | `feature/bulk-software-updates` | `software-updates` (PR) | `remove-task-uploads` |
+| Repository | `feature/bulk-software-updates` | `software-updates` (PR) | upstream PR |
 |---|---|---|---|
-| nats | `d9b855a` | `b3a4794` | – |
-| openuem-agent | `1c0972c` | `3a8e4b2` | `80dcb93` |
-| openuem-console | `193fefc` | `61ebb9f` | `6e6dbb1` |
-| openuem-cert-manager | – | `626b464` | – |
-| openuem-worker | – | `826d9d0` | – |
-| install-script (console repo) | | | this commit |
+| nats | `d9b855a` | `b3a4794` | #24 |
+| openuem-agent | `5cd7523` | `e5e6a2a` | #216 |
+| openuem-console | `5a4596e` | `c7e7325` | #499 (issue #498) |
+| openuem-cert-manager | – | `626b464` | #17 |
+| openuem-worker | – | `826d9d0` | not opened yet |
+| install-script (console repo) | | this commit | – |
 
 ### 2.3 Commits of the PR branches
 
@@ -72,15 +72,26 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `dda0193` the update subjects
   - `626b464` `agent.wingetsource.>`
 - **agent:**
-  - `a79aaad` bulk, queued and user-scoped updates (and the MSI download, removed by `remove-task-uploads`)
+  - `a79aaad` bulk, queued and user-scoped updates (and the MSI download, removed by `1cd77ea`)
   - `ea46457` registers the winget repository
   - `3a8e4b2` logs winget's own error lines when that fails
+  - `1ad7aa3` registers the repository as a trusted source
+  - `9482bb8` lists only user-scoped packages in user sessions
+  - `1cd77ea` removes the download of MSI packages uploaded for tasks
+  - `e5e6a2a` uses the newest App Installer whose winget.exe can run
 - **console:**
   - `c62c336` bulk updates, update status, MSI uploads for tasks
   - `99763b4` private winget repository
   - `2dc50cb` repository served on the console port
   - `c27d686` EXE and MSIX
   - `61ebb9f` profile tasks can use library packages
+  - `61192ae` no version in derived package identifiers
+  - `1aeb5f7` EXE test data that `.gitignore` left out
+  - `fb60764` search results list every version of a package
+  - `5ccda5a` other organizations' library packages hidden from the searches
+  - `a4be997` no contact details in derived package identifiers
+  - `86bc5f1` task search offers the packages of the profile's organization
+  - `c7e7325` removes the MSI uploads for tasks
 - **worker:**
   - `c6980f8` profile tasks use the source `OpenUEM` for library packages
   - `826d9d0` Dockerfile fix
@@ -190,25 +201,35 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - the OpenUEM CA added to the trusted roots;
 - ports 1323 and 8000 reachable.
 
-### Not verified yet (see `TEST_PLAN.md`)
+**On Windows 11 VMs, 2026-11-18 (unattended run):** the whole `TEST_PLAN.md`, with the
+server and agent installed by the install scripts. Everything passed after the fixes
+below, except the optional MSIX upload on Windows and the login behind a reverse proxy,
+which weren't tested.
 
-- **Registering the winget source on Windows with the port 1323 fix.** The last failed attempts (`0x8A150045`) were all from before the server update, so the fix hasn't been tried.
-- Installing, updating and uninstalling library packages with winget on Windows (MSI, EXE, MSIX).
-- A profile installing a library package (needs the worker fork).
-- Per-user app updates, an interrupted run, an offline Windows computer, and the regression checks.
+### Fixed after testing on Windows
+
+| Where | Problem | Fix |
+|---|---|---|
+| agent | Every install from the repository failed as SYSTEM with `0x8A150001` after "Installer hash verified": winget checks installers of untrusted sources with `IAttachmentExecute`, which needs an interactive session | Source added with `--trust-level trusted`; existing registrations are redone once |
+| console | The derived identifier contained the version (`IgorPavlov.7Zip2408X64Edition`), so each upload was a new package and never an update | Version left out of the identifier |
+| console | `manifestSearch` by product code returned only the matching version, so `winget upgrade` never offered the newer one | All versions of a matching package are returned |
+| agent | User sessions listed machine-wide programs too; a library package (source only registered for SYSTEM) showed up as the community package "for the user" | User sessions list with `--scope user` |
+| agent | While App Installer updated itself, its new folder had an empty `winget.exe` and every winget command failed ("%1 is not a valid Win32 application") | Newest version with a usable `winget.exe`, compared as numbers |
+| console | The shared package catalog showed every organization's library packages in Deploy search and task search | Other organizations' packages are left out |
+| console | The task search (`/packages`) has no organization in its URL and used the default organization | The task form sends its profile; global profiles get only packages for all organizations |
+| console | Contact details in an EXE's publisher ended up in the identifier (`DonHODonHFreeFr.Notepad`) | E-mail and web addresses removed |
+| console | The EXE test data was never committed (`*.exe` in `.gitignore`), so the tests failed on a fresh clone | Added with `git add -f` |
+| install script (Windows) | `cmd /c ssh … > file` hung on larger output when the script ran without a console (SSH, remote management) | `Start-Process -RedirectStandardOutput` |
 
 ## 5. Next steps
 
-1. ~~Fork `open-uem/openuem-worker`~~: done, `devilAPI/openuem-worker` branch `software-updates`. The next server update builds the agents worker from it.
-2. **Update the server and the VM** (commands in `TEST_PLAN.md`), click **Register** in Deploy → Software library, and check the agent log. If it fails, the log now contains winget's own lines (an HRESULT such as `80072F8F` or `80072F0C`). Those decide the next fix.
-3. **Run the rest of `TEST_PLAN.md`.**
-4. **Once a profile installs a library package on Windows, merge `remove-task-uploads`** (the user's condition: remove the task upload only if the functionality is preserved):
-   - merge it into `feature/bulk-software-updates` in the console and agent;
-   - in the PR branches, squash it into the first console/agent commits, or add it as a commit;
-   - remove the `task-files` volume from `install-openuem-fork.sh`;
-   - update `pr/console.md` and `pr/agent.md`: remove the "Uploaded MSI packages" sections and the `/agent-files` tests.
-5. **Update the PR descriptions** on GitHub from `pr/*.md`, and open the worker PR with `pr/worker.md`. Then tick the manual tests that passed.
-6. **After the nats PR is merged:** replace the `replace` pins (see 2.4).
+1. ~~Fork the worker~~, ~~update server and VM~~, ~~run `TEST_PLAN.md`~~, ~~merge `remove-task-uploads`~~: done 2026-11-18.
+2. **Update the PR descriptions and titles on GitHub** from `pr/*.md` (the agent and console titles still mention uploaded MSI packages), and **open the worker PR** with `pr/worker.md`. Suggested titles:
+   - agent: `feat: list available updates, bulk and queued update runs, user-scoped packages and the console's winget repository`
+   - console: `feat: bulk software updates, update status and a private winget repository`
+3. Optional: test an `.msix` on Windows and the certificate login behind a reverse proxy.
+4. Delete the merged `remove-task-uploads` branches (console, agent).
+5. **After the nats PR is merged:** replace the `replace` pins (see 2.4).
 
 ## 6. Rules agreed with the user
 
@@ -230,6 +251,10 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - **Leader election:** `nats.cfg` files from the published openuem-cert-manager image lack the console's leader election permissions, so the package search stays empty. The install script adds them.
 - **NATS OCSP cache.** NATS caches OCSP answers for 24 hours in the container itself. If it starts before the OCSP responder can answer (e.g. after a reboot), it caches "unknown" and refuses the workers with `client not OCSP valid`. Fix: `docker compose up -d --force-recreate nats-server`.
 - **Login:** the first login with the generated password forces a password change (min. 15 characters), and `/login/userpass` is rate-limited.
+- **winget installs reported as successful when they failed.** `InstallPackage` (agent) still runs winget through `| Select-String`, so the exit code is PowerShell's `1` and the deployment is recorded as installed. Check the computer, not the console, when an install looks wrong. The fork fixed this for updates only.
+- **Duplicate deployments.** Requesting an install of a package that is already recorded as deployed creates a second row; the agent's later uninstall result then fails with `deployment not singular` and both rows stay "In Progress".
+- **New organizations default to "default organization: Yes"** in the form, so creating one silently makes it the default for newly registered agents.
+- **Profile tasks re-run on installed packages** ("Run only once" aside) and the masked exit code makes them look failed in the agent log.
 
 ## 8. Testing without Windows (how the container tests were done)
 
