@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,4 +205,19 @@ func (suite *DeploymentTestSuite) TestSaveDeployInfoInstallAgain() {
 
 func TestDeploymentTestSuite(t *testing.T) {
 	suite.Run(t, new(DeploymentTestSuite))
+}
+
+func (suite *DeploymentTestSuite) TestSaveDeployInfoConcurrentInstalls() {
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.NoError(suite.T(), suite.model.SaveDeployInfo(&openuem_nats.DeployAction{AgentId: "agent1", Action: "install", PackageId: "package.concurrent", PackageName: "Concurrent"}, false, suite.commonInfo))
+		}()
+	}
+	wg.Wait()
+	n, err := suite.model.Client.Deployment.Query().Where(deployment.PackageID("package.concurrent")).Count(context.Background())
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), 1, n, "one deployment for concurrent requests")
 }

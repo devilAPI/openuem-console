@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"strconv"
+	"sync"
 	"time"
 
 	ent "github.com/open-uem/ent"
@@ -147,6 +148,9 @@ func (m *Model) CountAllDeployments(c *partials.CommonInfo) (int, error) {
 	}
 }
 
+// saveInstallMu serializes saving install requests, see SaveDeployInfo
+var saveInstallMu sync.Mutex
+
 // mergeDuplicateDeployments reports whether an agent has a deployment of a package, and
 // removes all but the oldest if there are several (consoles before this fix created one
 // per install request)
@@ -179,6 +183,11 @@ func (m *Model) SaveDeployInfo(data *openuem_nats.DeployAction, deploymentFailed
 	}
 
 	if data.Action == "install" {
+		// Two requests for the same package must not both see no deployment and create
+		// one each
+		saveInstallMu.Lock()
+		defer saveInstallMu.Unlock()
+
 		// A package installed again, e.g. after a failed or removed install, reuses its
 		// deployment: the agent's result is saved to the single deployment of the
 		// package and agent, so a second one would never get the result
