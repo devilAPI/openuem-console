@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/open-uem/ent/agent"
+	"github.com/open-uem/ent/deployment"
 	"github.com/open-uem/ent/enttest"
 	openuem_nats "github.com/open-uem/nats"
 	"github.com/open-uem/openuem-console/internal/views/partials"
@@ -173,6 +174,32 @@ func (suite *DeploymentTestSuite) TestSaveDeployInfo() {
 	assert.NoError(suite.T(), err, "should get deployments for agent")
 	assert.Equal(suite.T(), "deployment3", items[3].Name, "install time should be zero")
 	assert.Equal(suite.T(), true, items[3].Installed.IsZero(), "install time should be zero")
+}
+
+func (suite *DeploymentTestSuite) TestSaveDeployInfoInstallAgain() {
+	countDeployments := func(packageID string) int {
+		n, err := suite.model.Client.Deployment.Query().Where(deployment.PackageID(packageID), deployment.HasOwnerWith(agent.ID("agent1"))).Count(context.Background())
+		assert.NoError(suite.T(), err)
+		return n
+	}
+
+	// Installing a package that already has a deployment reuses it, as pending
+	err := suite.model.SaveDeployInfo(&openuem_nats.DeployAction{AgentId: "agent1", Action: "install", PackageId: "package1", PackageName: "Package 1"}, false, suite.commonInfo)
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), 1, countDeployments("package1"), "no second deployment")
+	d, err := suite.model.Client.Deployment.Query().Where(deployment.PackageID("package1")).Only(context.Background())
+	assert.NoError(suite.T(), err)
+	assert.True(suite.T(), d.Installed.IsZero(), "pending again")
+
+	// Duplicates created before are merged, so the agent's result can be saved again
+	for i := 0; i < 2; i++ {
+		err = suite.model.Client.Deployment.Create().SetName("dup").SetVersion("1").SetOwnerID("agent1").SetPackageID("package2").SetInstalled(time.Now()).SetUpdated(time.Now()).Exec(context.Background())
+		assert.NoError(suite.T(), err)
+	}
+	assert.Equal(suite.T(), 3, countDeployments("package2"))
+	err = suite.model.SaveDeployInfo(&openuem_nats.DeployAction{AgentId: "agent1", Action: "install", PackageId: "package2", PackageName: "Package 2"}, false, suite.commonInfo)
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), 1, countDeployments("package2"), "duplicates merged")
 }
 
 func TestDeploymentTestSuite(t *testing.T) {

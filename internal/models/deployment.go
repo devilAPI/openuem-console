@@ -147,6 +147,25 @@ func (m *Model) CountAllDeployments(c *partials.CommonInfo) (int, error) {
 	}
 }
 
+// mergeDuplicateDeployments reports whether an agent has a deployment of a package, and
+// removes all but the oldest if there are several (consoles before this fix created one
+// per install request)
+func (m *Model) mergeDuplicateDeployments(packageID, agentID string) (bool, error) {
+	ids, err := m.Client.Deployment.Query().
+		Where(deployment.PackageID(packageID), deployment.HasOwnerWith(agent.ID(agentID))).
+		Order(ent.Asc(deployment.FieldID)).
+		IDs(context.Background())
+	if err != nil {
+		return false, err
+	}
+	if len(ids) > 1 {
+		if _, err := m.Client.Deployment.Delete().Where(deployment.IDIn(ids[1:]...)).Exec(context.Background()); err != nil {
+			return false, err
+		}
+	}
+	return len(ids) > 0, nil
+}
+
 func (m *Model) SaveDeployInfo(data *openuem_nats.DeployAction, deploymentFailed bool, c *partials.CommonInfo) error {
 	timeZero := time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC)
 
@@ -160,7 +179,15 @@ func (m *Model) SaveDeployInfo(data *openuem_nats.DeployAction, deploymentFailed
 	}
 
 	if data.Action == "install" {
-		if deploymentFailed {
+		// A package installed again, e.g. after a failed or removed install, reuses its
+		// deployment: the agent's result is saved to the single deployment of the
+		// package and agent, so a second one would never get the result
+		existing, err := m.mergeDuplicateDeployments(data.PackageId, data.AgentId)
+		if err != nil {
+			return err
+		}
+
+		if deploymentFailed || existing {
 			query := m.Client.Deployment.Update().SetInstalled(timeZero).SetUpdated(timeZero).SetFailed(false)
 
 			if data.PackageBranch != "" {
