@@ -46,23 +46,26 @@ The request/reply subjects need NATS permissions, which the openuem-cert-manager
 
 Unlike `RunAsUser`, which borrows the token of the first `explorer.exe` it finds, this covers every logged-in user (fast user switching, RDS). Users without the package are skipped.
 
+The user controls the session's environment and the alias, so `LOCALAPPDATA` is only used when it's a local drive path (a network path would make SYSTEM access the share with the computer's account), the output kept is capped at 4 MB, and the agent stops waiting for the output 30 seconds after a command ended or was killed (installers started by winget may hold the pipe). Sessions are listed one after another, so on Remote Desktop servers with many users a listing takes accordingly long.
+
 ### Update runs
 - **One package at a time:** a mutex also keeps a single-package update from running at the same time as a bulk run.
 - **Results are also deployment results:** each result is sent as a normal `deployresult`, so deployments made with OpenUEM keep their status. The worker ignores packages it doesn't track.
 - **The last run is kept on the agent:** it's stored in `last_update_run.json` in the agent's data directory. A run interrupted by a restart is reported as interrupted.
 - **Queued requests:**
-  - ignored if older than 30 days, or if a run started after them (e.g. the update was requested several times while the computer was offline),
-  - delivered again 10 minutes later if a run is in progress.
+  - ignored if older than 30 days (the console doesn't queue a second request while one is waiting),
+  - delivered again 10 minutes later if a run is in progress,
+  - acknowledged when the run starts: a run interrupted by a restart is reported as interrupted and has to be requested again.
 - **Inventory:** a report is sent after each run, so the console shows the new versions.
 
 ### Private winget repository (Windows)
 
 The console hosts a winget REST source with the packages uploaded to its Software library (see the console PR). Computers only need outbound HTTPS to the console; nothing is pushed to them.
 
-- **Registration:** on `agent.wingetsource.<uuid>`, the agent runs `winget source remove` and `winget source add --name OpenUEM --arg <url> --type Microsoft.Rest --trust-level trusted --accept-source-agreements --disable-interactivity`. If that fails, the matching lines of winget's own log are added to the error.
+- **Registration:** only the source name `OpenUEM` is accepted (a request can't replace winget's own sources). On `agent.wingetsource.<uuid>`, the agent runs `winget source remove` and `winget source add --name OpenUEM --arg <url> --type Microsoft.Rest --trust-level trusted --accept-source-agreements --disable-interactivity`. If that fails, the matching lines of winget's own log are added to the error.
 - **Trusted source:** winget checks installers of untrusted sources with `IAttachmentExecute`, which fails without an interactive session: as SYSTEM, every install from the repository ended with `0x8A150001` right after "Installer hash verified". The repository is the console's own, served over HTTPS, and winget still verifies each installer's SHA-256.
-- **Certificate:** winget needs a certificate it trusts. With `TrustCA`, which the console sets when it has no reverse proxy with a public certificate, the agent first adds the OpenUEM CA to the machine's trusted root store with `certutil -addstore -f Root`.
-- **No unnecessary runs:** the last registered source is kept in `winget_source.json` (mode 0600, it contains the agent's token URL). The console sends the registration every 30 minutes, and winget only runs when the name, URL or CA setting changed, the last registration failed, or the source was registered before it was trusted.
+- **Certificate:** winget needs a certificate it trusts. With `TrustCA`, which the console sets when it has no reverse proxy with a public certificate, the agent first adds the OpenUEM CA to the machine's trusted root store with `%SystemRoot%\System32\certutil.exe -addstore -f Root`. Whoever has the CA key can then issue certificates these computers trust for any host; a reverse proxy with a public certificate avoids adding it.
+- **No unnecessary runs:** a hash of the last registered source is kept in `winget_source.json` (local users can read the agent's folder, so not the URL with the agent's token). The console sends the registration every 30 minutes, and winget only runs when the name, URL or CA setting changed, the last registration failed, or the source was registered before it was trusted.
 - **Other systems** reply and ignore the message.
 
 ## Bug fixes
@@ -71,7 +74,9 @@ The console hosts a winget REST source with the packages uploaded to its Softwar
 - **The `0x8A15002B` ("no applicable update") check never matched.** It compared a lower-cased code with an upper-cased one. It's now `deploy.ErrNoApplicableUpdate`, and an up-to-date package is reported as updated, as before.
 - **Packages not installed machine-wide reported as failed.** When no scope is given, the agent now tries the logged-in users' sessions. If nobody has the package, it's reported as not installed instead of failed. This matters when a package is updated on many computers from the console.
 - **Empty reason for failed PowerShell script tasks.** The logged reason was the output of the previous `Set-ExecutionPolicy` command, which is empty. It's now what the script wrote.
-- **Package ids are validated** before they're passed to a package manager: not empty, no leading `-`, no whitespace or shell metacharacters.
+- **Package ids are validated** before they're passed to a package manager (winget, flatpak and Homebrew): not empty, no leading `-`, no whitespace or shell metacharacters.
+- **winget installs and uninstalls ran through PowerShell** (`& winget install <id> | Select-String`): the exit code was PowerShell's, so failed installs were recorded as installed, and the package id and version were put into the PowerShell command line unvalidated. winget now runs directly with an argument list; "already installed, no newer version" (install) and "not installed" (uninstall) count as success, other failures are reported with winget's error.
+- **Failed uninstalls were sent with `Failed=false`.**
 - **winget.exe of an App Installer update that isn't complete.** `locateWinGet` took the last `DesktopAppInstaller` folder in name order. While App Installer updates itself, the new version's folder exists with an empty `winget.exe` (paused for SYSTEM), and every winget command failed with "%1 is not a valid Win32 application". It now takes the newest version, compared as numbers, whose `winget.exe` can run.
 
 ## Compatibility and upgrade notes
@@ -92,6 +97,8 @@ The console hosts a winget REST source with the packages uploaded to its Softwar
 - **Package id validation.**
 - **Run tracker:** concurrent start, copies, interrupted runs, errors.
 - **winget source:** the `source add` arguments; registration is skipped when nothing changed, retried after a failure, and repeated once for sources registered before they were trusted.
+- **Source requests:** only the name `OpenUEM` with an https URL is accepted.
+- **Hardening:** local drive paths only for a user's `LOCALAPPDATA`; capped command output; install, uninstall and version argument lists and version validation.
 - **Locating winget.exe:** newest version compared as numbers, empty or missing `winget.exe` and other architectures skipped.
 
 ### Builds
@@ -107,6 +114,9 @@ Tested on a Windows 11 endpoint (build 26300, winget 1.11) with a Docker deploym
 - [x] a package that isn't installed is reported as not installed, not as failed
 - [x] a failing PowerShell task shows the script's error
 - [x] winget keeps working while App Installer updates itself
+- [x] a failing install (unknown package) is reported as failed with winget's reason; installing an installed package, uninstalling a removed one count as success
+- [x] the state file holds a hash, no token
+- [x] the official 0.11.0 agent keeps working with the console of this series after an existing installation is upgraded
 
 End to end with the console, NATS and a Linux agent in containers:
 - [x] the agent connects, is admitted and its subscriptions are accepted

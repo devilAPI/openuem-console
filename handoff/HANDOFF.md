@@ -57,8 +57,8 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 | Repository | `feature/bulk-software-updates` | `software-updates` (PR) | upstream PR |
 |---|---|---|---|
 | nats | `d9b855a` | `b3a4794` | #24 |
-| openuem-agent | `5cd7523` | `e5e6a2a` | #216 |
-| openuem-console | `5a4596e` | `c7e7325` | #499 (issue #498) |
+| openuem-agent | `a53b63b` | `2487602` | #216 |
+| openuem-console | `ef3a9f2` | `1030b44` | #499 (issue #498) |
 | openuem-cert-manager | – | `626b464` | #17 |
 | openuem-worker | – | `826d9d0` | not opened yet |
 | install-script (console repo) | | this commit | – |
@@ -79,6 +79,12 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `9482bb8` lists only user-scoped packages in user sessions
   - `1cd77ea` removes the download of MSI packages uploaded for tasks
   - `e5e6a2a` uses the newest App Installer whose winget.exe can run
+  - `fb9203e` installs and uninstalls without PowerShell, reporting failures (upstream bug)
+  - `ccbba2e` only the source name OpenUEM, no token in the state file
+  - `7e99049` hardened winget in users' sessions (local LOCALAPPDATA, capped output, WaitDelay)
+  - `649d568` failed uninstalls reported as failed (upstream bug)
+  - `fbb9dfb` queued requests no longer dropped because a later run started
+  - `2487602` package ids validated for flatpak and Homebrew
 - **console:**
   - `c62c336` bulk updates, update status, MSI uploads for tasks
   - `99763b4` private winget repository
@@ -92,6 +98,14 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `a4be997` no contact details in derived package identifiers
   - `86bc5f1` task search offers the packages of the profile's organization
   - `c7e7325` removes the MSI uploads for tasks
+  - `39c7d64` an install reuses the package's deployment, duplicates merged (upstream bug)
+  - `57cecf1` MSI headers checked before parsing (a crafted file crashed the console)
+  - `50e7127` an identifier belongs to one organization; safe replace; crash leftovers removed
+  - `cd13893` library identifiers can't take over community identifiers
+  - `96f158e` package pickers without values in hyperscript (upstream sink)
+  - `be35d00` installer URLs from the registered base URL (reverse proxies)
+  - `d2f0be1` concurrent install requests saved one at a time
+  - `1030b44` no second queued request while one is waiting
 - **worker:**
   - `c6980f8` profile tasks use the source `OpenUEM` for library packages
   - `826d9d0` Dockerfile fix
@@ -221,12 +235,29 @@ which weren't tested.
 | console | The EXE test data was never committed (`*.exe` in `.gitignore`), so the tests failed on a fresh clone | Added with `git add -f` |
 | install script (Windows) | `cmd /c ssh … > file` hung on larger output when the script ran without a console (SSH, remote management) | `Start-Process -RedirectStandardOutput` |
 
+### Production readiness round (2026-11-18, second session)
+
+Asked whether the build is ready for a live system, this round did:
+- **Two independent code reviews** (console and agent, security and correctness, with fuzzing of the installer parsers and race tests). Every finding is fixed except the documented limitations below.
+- **Two upstream bugs that the fork makes more visible, fixed:** installs recorded as successful when winget failed, and duplicate deployments stuck "In Progress".
+- **Upgrade of an existing official installation:** the published images (console, workers) with an admitted official 0.11.0 agent, a profile with a task and a deployment were upgraded with `install-openuem-fork.sh`. All 41 tables kept their rows, the official agent kept working with the fork console, the profile is shown with its task, and the rollback (`rm compose.override.yml && docker compose up -d`) to the published images works on the migrated database.
+
+**Documented limitations (not fixed, decide before going live):**
+- **Repository tokens don't expire**; disabling or deleting an agent revokes its token, rotating the console's JWT key revokes all (and everything else signed with it).
+- **The OpenUEM CA goes into the computers' Root store** when the console has no reverse proxy. Whoever has the CA key can then issue certificates the computers trust for any host. With a reverse proxy that has a public certificate, it isn't added (`TrustCA` false).
+- **Listing a computer's updates** keeps the HTTP request open up to a few minutes; behind a reverse proxy, raise its read timeout (e.g. nginx `proxy_read_timeout 600s`).
+- **A queued run is acknowledged when it starts**: interrupted by a reboot, it's shown as interrupted and has to be requested again.
+- **Remote Desktop servers with many sessions:** updates are listed session after session.
+- **Single-role console** (upstream): every console user can act on every organization.
+- **`go.mod` replaces `open-uem/nats` with `devilAPI/nats`** until the nats PR is merged; the live build depends on that repository.
+- **Back up the database before upgrading** a live system (`docker compose exec db pg_dump …`); the script doesn't.
+
 ## 5. Next steps
 
 1. ~~Fork the worker~~, ~~update server and VM~~, ~~run `TEST_PLAN.md`~~, ~~merge `remove-task-uploads`~~: done 2026-11-18.
 2. ~~Update the agent and console PR descriptions and titles~~: done (#216, #499), with `#ISSUE` replaced by `#498`.
    **Open the worker PR** with `pr/worker.md` (replace `#ISSUE` with `#498`), title `feat: install profile packages of the console's winget repository from it`, from `devilAPI:software-updates` into `open-uem/openuem-worker:main`. The unattended session wasn't allowed to open a new upstream PR.
-3. Optional: test an `.msix` on Windows and the certificate login behind a reverse proxy.
+3. Optional: test an `.msix` on Windows and the certificate login behind a reverse proxy (the installer URL fix for proxies is unit-tested only).
 4. Delete the merged `remove-task-uploads` branches (console, agent).
 5. **After the nats PR is merged:** replace the `replace` pins (see 2.4).
 
@@ -250,10 +281,10 @@ which weren't tested.
 - **Leader election:** `nats.cfg` files from the published openuem-cert-manager image lack the console's leader election permissions, so the package search stays empty. The install script adds them.
 - **NATS OCSP cache.** NATS caches OCSP answers for 24 hours in the container itself. If it starts before the OCSP responder can answer (e.g. after a reboot), it caches "unknown" and refuses the workers with `client not OCSP valid`. Fix: `docker compose up -d --force-recreate nats-server`.
 - **Login:** the first login with the generated password forces a password change (min. 15 characters), and `/login/userpass` is rate-limited.
-- **winget installs reported as successful when they failed.** `InstallPackage` (agent) still runs winget through `| Select-String`, so the exit code is PowerShell's `1` and the deployment is recorded as installed. Check the computer, not the console, when an install looks wrong. The fork fixed this for updates only.
-- **Duplicate deployments.** Requesting an install of a package that is already recorded as deployed creates a second row; the agent's later uninstall result then fails with `deployment not singular` and both rows stay "In Progress".
+- ~~winget installs reported as successful when they failed~~ and ~~duplicate deployments~~: fixed in the fork (see 2.3), as they hit library packages.
+- **The official agent's Debian package hangs in unattended installs**: its debconf `config` script loops `while [ -z "$nats_server" ]` around the prompt, so `DEBIAN_FRONTEND=noninteractive apt-get install` spins forever unless `openuem-agent/nats-server` is preseeded with `debconf-set-selections`.
 - **New organizations default to "default organization: Yes"** in the form, so creating one silently makes it the default for newly registered agents.
-- **Profile tasks re-run on installed packages** ("Run only once" aside) and the masked exit code makes them look failed in the agent log.
+- **Profile tasks re-run on installed packages** ("Run only once" aside); with the fork's install fix they now end as "already installed and up to date".
 
 ## 8. Testing without Windows (how the container tests were done)
 

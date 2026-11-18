@@ -70,10 +70,11 @@ Instead of copying packages to computers, the console hosts its own winget REST 
   - **EXE:** name, publisher and version come from the version resource (`exe.go`). Inno Setup and NSIS installers are recognized by the signatures they carry, WiX Burn bundles by their `.wixburn` section; winget knows the silent switches of all three. Other setup programs must be given their silent switches, otherwise winget would start them without arguments and wait for a click. The manifest lists the program's Apps & features entry, so winget finds the installed version.
   - **MSIX:** name, publisher, version and architecture come from `AppxManifest.xml` (`msix.go`). The package family name, by which winget recognizes the installed package, is computed from the publisher. Bundles aren't supported.
   - All packages are installed with machine scope, as the agent runs winget as SYSTEM with `--scope machine`.
-- **Availability:** the current organization or all organizations.
+- **Availability:** the current organization or all organizations. An identifier belongs to one of them: an upload for an identifier another organization (or "all organizations") uses is refused, so an upload can't replace or shadow another organization's package. Identifiers of other sources (e.g. `Mozilla.Firefox` of winget's community repository) are refused too, as the identifier decides which source a task installs from.
+- **Robust parsing:** the MSI header is checked against the file size before the compound file reader allocates its tables (a crafted 3.5 KB file made it allocate gigabytes and the process die). The EXE, MSI and MSIX readers were fuzzed without findings otherwise; the MSIX manifest is limited to 1 MiB.
 - **List and delete:** packages and their versions.
 - **Register now:** sends the registration to this organization's computers right away.
-- **Storage:** `winget-repository` in the working directory (`--winget-repository-dir`, `WINGET_REPOSITORY_DIR`; with Docker, `/bin/winget-repository` needs a volume). Each version is a directory with `package.json` and the installer. Uploads are staged in a temporary file first and moved into place, so an interrupted upload never shows up as a package.
+- **Storage:** `winget-repository` in the working directory (`--winget-repository-dir`, `WINGET_REPOSITORY_DIR`; with Docker, `/bin/winget-repository` needs a volume). Each version is a directory with `package.json` and the installer. Uploads are staged in a temporary file first and moved into place, so an interrupted upload never shows up as a package; a replaced version is prepared next to the old one and swapped in, and leftovers of a crash are removed at startup.
 
 ### REST source (console web server, `/winget/<agent id>/<token>/...`)
 - **Why the console port and not the auth server:** the auth server asks every client for a certificate (`tls.RequestClientCert`, for the certificate login). winget uses WinHTTP through cpprestsdk, and WinHTTP fails a request with `ERROR_WINHTTP_CLIENT_AUTH_CERT_NEEDED` when the server asks for a certificate and the client doesn't answer; neither winget nor cpprestsdk does. `winget source add` then fails with `0x8A150045`. The web server uses the same certificate without asking, so the source is served there: `https://<server>:<console port>/winget/...`, or `https://<reverse proxy server>/winget/...` behind a reverse proxy. The handlers live with the auth server's (`RegisterWinGetSource`) and are registered on the web server's router before it starts.
@@ -106,6 +107,8 @@ Library packages are added to the software catalog with the source `openuem` (sy
   The build stage now uses `WORKDIR /src` and `golang:1.26`. The runtime stage is unchanged and matches the published image.
 - **Homebrew types:** they were checked with `slices.Contains([]string{"cask,formula"}, t)`, a single string, so every brew type was rejected.
 - **`Client-Cert` header:** the auth server accepted a client certificate from this header on any connection that had no TLS client certificate. The header doesn't prove possession of the private key, so anyone who knows a certificate could send it. It's now only used when a reverse proxy is configured (`REVERSE_PROXY_AUTH_PORT`). This also applies to the certificate login; deployments behind NGINX or Caddy keep working.
+- **Duplicate deployments:** every install request created a deployment unless the previous one had failed, so installing a package again left two; the agent's next result then failed with `deployment not singular` and both stayed "In Progress". Install requests now reuse the deployment, merge existing duplicates and are saved one at a time.
+- **Package pickers of the task form** put the package id and name into hyperscript strings; a quote in a name broke the picker and a crafted name could run its own hyperscript. The values are now data attributes.
 - **Test data:** `*.exe` is in `.gitignore`, so the small test executables of `internal/wingetrepo/testdata` are added with `git add -f` (built as described in its README).
 
 ## Required NATS permissions (openuem-cert-manager PR)
@@ -130,6 +133,9 @@ All new texts are translated into en, de, es, fr, ca, pt and no. The new templat
 - **`/winget` handler (end to end over HTTP):** information, wrong token, another agent's token, agent waiting for admission, search limited to the agent's organization, 204 when nothing matches, manifest with the agent's installer URL, installers of another organization, wrong file names, JSON errors.
 - **Package identifiers** built from publisher and name: accented letters, versions in product names (and numbers that aren't the version), contact details in publishers.
 - **Search** of an installed older version by its product code returns all versions.
+- **Library ownership:** another organization's upload of an identifier is refused (also with other case), versions are replaced safely, crash leftovers removed; corrupt MSI headers are refused without allocating (run under a memory limit).
+- **Deployments:** an install request reuses the deployment and merges duplicates; concurrent requests.
+- **Installer URLs** use the registered base URL, not the request's Host (as behind nginx).
 - **Organizations:** library packages hidden from other organizations in Deploy search, its count and the task search (model tests on SQLite), and for global profiles.
 
 ### Build and test status
@@ -161,8 +167,20 @@ Tested with the Docker deployment (installed with the fork's install script on D
 - [x] login with the admin certificate directly; the `Client-Cert` header is refused without a reverse proxy
 - [x] organization and site URLs (`/tenant/:tenant/...`, `/tenant/:tenant/site/:site/...`) of all deploy pages
 - [x] Docker image builds with the fixed Dockerfile
+- [x] uploads of another organization's identifier and of a community identifier are refused with a message
+- [x] Update all software clicked twice for an offline computer queues one request (checked in AGENTS_STREAM)
+- [x] installing a package again merges the duplicate deployments left by earlier versions, and the agent's result is saved
+- [x] an existing installation of the published images (with an admitted official 0.11.0 agent, a profile, a task and a deployment) upgraded to this console: no row lost, the official agent keeps working, the profile is shown; going back to the published images works on the migrated database
 
 Not tested: login behind a reverse proxy, an MSIX package on Windows (its parsing and manifests are covered by unit tests).
+
+## Security notes
+
+A separate security review of this PR's code was done before deploying it; its findings are fixed (see the commits above) except these, which are documented limitations:
+- **Repository tokens don't expire.** An agent's source URL is `HMAC(console JWT key, agent id)`: it stays valid while the agent is enabled. Disabling or deleting the agent revokes it; rotating the JWT key revokes all. It gives read access to the installers the agent's organizations can install. The agent doesn't store it in a file local users can read.
+- **The OpenUEM CA is added to the computers' trusted roots** when the console has no reverse proxy, because winget only accepts sources with a trusted certificate. Whoever has the CA key can then issue certificates the computers trust for any host. A reverse proxy with a public certificate avoids it.
+- **Listing a computer's updates** keeps the HTTP request open while the agent works (up to a few minutes); behind a reverse proxy, its read timeout must allow it.
+- Console users aren't limited to organizations (upstream design): the organization scoping decides which computers can install a package, not which console users can manage it.
 
 ## Notes
 
