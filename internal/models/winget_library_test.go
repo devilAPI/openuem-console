@@ -60,3 +60,25 @@ func TestLibraryPackagesInCatalog(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, isLibrary, "removed from the library")
 }
+
+func TestProfileTenantIDs(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", "file:profiletenants?mode=memory&_fk=1")
+	defer client.Close()
+	m := Model{Client: client}
+
+	tenant := client.Tenant.Create().SetDescription("Org").SaveX(ctx)
+	orgProfile := client.Profile.Create().SetName("org").AddTenantIDs(tenant.ID).SaveX(ctx)
+	globalProfile := client.Profile.Create().SetName("global").SaveX(ctx)
+
+	ids, err := m.ProfileTenantIDs(orgProfile.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []int{tenant.ID}, ids)
+
+	ids, err = m.ProfileTenantIDs(globalProfile.ID)
+	require.NoError(t, err)
+	assert.Empty(t, ids, "global profile")
+
+	_, err = m.ProfileTenantIDs(globalProfile.ID + 100)
+	assert.Error(t, err, "unknown profile")
+}

@@ -63,3 +63,14 @@ func TestHiddenLibraryPackageIDs(t *testing.T) {
 	assert.Equal(t, []string{"Org1.App"}, hiddenLibraryPackageIDs(all, 2))
 	assert.Empty(t, hiddenLibraryPackageIDs(all, -1), "all organizations")
 }
+
+func TestHiddenLibraryPackageIDsForProfile(t *testing.T) {
+	pkg := func(id string, tenantID int) wingetrepo.Package {
+		return wingetrepo.Package{PackageIdentifier: id, TenantID: tenantID}
+	}
+	all := []wingetrepo.Package{pkg("Org1.App", 1), pkg("Org2.App", 2), pkg("Global.App", 0)}
+
+	assert.Equal(t, []string{"Org2.App"}, hiddenLibraryPackageIDsForProfile(all, []int{1}), "profile of an organization")
+	assert.Equal(t, []string{"Org1.App", "Org2.App"}, hiddenLibraryPackageIDsForProfile(all, nil), "global profile: only packages of all organizations")
+	assert.Equal(t, []string{"Org1.App", "Org2.App"}, hiddenLibraryPackageIDsForProfile(all, []int{1, 2}), "profile of several organizations")
+}

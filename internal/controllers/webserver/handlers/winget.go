@@ -36,7 +36,9 @@ func (h *Handler) SearchWingetPackages(c echo.Context) error {
 		p.SortOrder = "asc"
 	}
 
-	packages, err := h.Model.SearchAllWingetPackages(search, h.hiddenLibraryPackages(commonInfo))
+	// The task form sends its profile, whose organizations decide which packages of the
+	// console's winget repository its tasks can install
+	packages, err := h.Model.SearchAllWingetPackages(search, h.hiddenLibraryPackagesForProfile(c.FormValue("task-profile-id"), commonInfo))
 	if err != nil {
 		return RenderError(c, partials.ErrorMessage(err.Error(), true))
 	}

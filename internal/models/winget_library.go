@@ -58,3 +58,12 @@ func (m *Model) GetLibraryPackagesInCatalog() ([]string, error) {
 		Select(softwarepackage.FieldPackageID).
 		Strings(context.Background())
 }
+
+// ProfileTenantIDs returns the organizations of a profile, none for a global profile
+func (m *Model) ProfileTenantIDs(profileID int) ([]int, error) {
+	p, err := m.Client.Profile.Get(context.Background(), profileID)
+	if err != nil {
+		return nil, err
+	}
+	return p.QueryTenant().IDs(context.Background())
+}

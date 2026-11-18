@@ -107,6 +107,36 @@ func hiddenLibraryPackageIDs(all []wingetrepo.Package, tenantID int) []string {
 	return hidden
 }
 
+// hiddenLibraryPackageIDsForProfile returns the identifiers of the library packages a
+// profile's task can't install: those of other organizations. A global profile, or one of
+// several organizations, applies to computers of organizations that can't install an
+// organization's package, so it only gets the packages available to all of them.
+func hiddenLibraryPackageIDsForProfile(all []wingetrepo.Package, profileTenantIDs []int) []string {
+	if len(profileTenantIDs) == 1 {
+		return hiddenLibraryPackageIDs(all, profileTenantIDs[0])
+	}
+	return hiddenLibraryPackageIDs(all, 0)
+}
+
+// hiddenLibraryPackagesForProfile returns the library packages a profile's tasks can't
+// install, or those hidden from the current organization if the profile isn't known
+func (h *Handler) hiddenLibraryPackagesForProfile(profileID string, commonInfo *partials.CommonInfo) []string {
+	id, err := strconv.Atoi(profileID)
+	if err != nil || h.WinGetLibrary == nil {
+		return h.hiddenLibraryPackages(commonInfo)
+	}
+	tenantIDs, err := h.Model.ProfileTenantIDs(id)
+	if err != nil {
+		return h.hiddenLibraryPackages(commonInfo)
+	}
+	all, err := h.WinGetLibrary.List()
+	if err != nil {
+		log.Printf("[ERROR]: could not list the packages of the winget repository, reason: %v", err)
+		return nil
+	}
+	return hiddenLibraryPackageIDsForProfile(all, tenantIDs)
+}
+
 // hiddenLibraryPackages returns the library packages hidden from the current organization
 func (h *Handler) hiddenLibraryPackages(commonInfo *partials.CommonInfo) []string {
 	if h.WinGetLibrary == nil {
