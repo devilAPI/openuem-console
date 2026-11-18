@@ -244,6 +244,7 @@ $config | ConvertTo-Json | Set-Content -Path $configFile -Encoding UTF8
 
 # --- Official agent -----------------------------------------------------------
 $service = Get-Service openuem-agent -ErrorAction SilentlyContinue
+$wasInstalled = [bool]$service
 if ($service) {
     Write-Step "The OpenUEM agent is already installed, updating it to the latest build on the server"
 } else {
@@ -299,6 +300,6 @@ $status = (Get-Service openuem-agent).Status
 Write-Host ""
 Write-Host "OpenUEM agent service: $status" -ForegroundColor Green
 if (-not $OfficialOnly) { Write-Host "The fork's agent is installed, the official binary was saved as $agentExe.official" }
-Write-Host "Next: admit this computer in https://console.${Domain}:1323 (Agents)"
+if (-not $wasInstalled) { Write-Host "Next: admit this computer in https://console.${Domain}:1323 (Agents)" }
 Write-Host "Log:  $(Split-Path $agentExe)\logs\openuem-log.txt"
 Write-Host "Don't use 'update agents' in the console for this computer, it would replace the fork's agent."

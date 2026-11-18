@@ -235,8 +235,8 @@ OCSP_PORT="$(get_env OCSP_PORT)"
 
 # The upstream compose file only has network aliases for openuem.example, containers
 # don't read the host's /etc/hosts, so aliases are added for the chosen domain
-mkdir -p "$INSTALL_DIR/task-files" "$INSTALL_DIR/winget-repository"
-chmod 700 "$INSTALL_DIR/task-files" "$INSTALL_DIR/winget-repository"
+mkdir -p "$INSTALL_DIR/winget-repository"
+chmod 700 "$INSTALL_DIR/winget-repository"
 
 # The openuem-certs container rewrites nats.cfg every time it starts, so the permissions
 # the fork needs are added by this script, which the container runs right after
@@ -287,9 +287,8 @@ services:
   console:
     image: ${FORK_IMAGE}:latest
     pull_policy: never
-    # Files uploaded for tasks (MSI packages) must survive container updates
+    # The packages of the software library must survive container updates
     volumes:
-      - "./task-files:/bin/task-files:z"
       - "./winget-repository:/bin/winget-repository:z"
     networks:
       openuem:
@@ -485,10 +484,10 @@ New features of the fork:
   Deploy > Update all software        update everything on selected computers,
                                       offline computers update when they connect
   Deploy > Update status              status of the update runs of all computers
-  Deploy > Software library           private winget repository: upload MSI packages,
-                                      computers install and update them with winget
-  Profiles > (task) > MSI package     upload the MSI package instead of giving a URL,
-                                      only the profile's computers can download it
+  Deploy > Software library           private winget repository: upload MSI, EXE and
+                                      MSIX installers, computers install and update
+                                      them with winget
+  Profiles > (task) > WinGet package  install packages of the software library
   Profiles > (task) > script          load the script from a file
   Computers > (computer) > Deploy >
     Software updates                  list a computer's updates, update some or all
