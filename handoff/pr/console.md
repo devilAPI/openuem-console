@@ -1,0 +1,209 @@
+Related to open-uem/openuem-console#ISSUE (feature request: bulk software updates).
+
+## Summary
+
+New pages and actions to keep the software of many computers up to date:
+
+| Where | What |
+|---|---|
+| Deploy > **Update** | Search a package and update it on the selected computers |
+| Deploy > **Update all software** | Update every package with an available update on the selected computers, including packages installed for the logged-in users. Offline computers start when they connect again. |
+| Deploy > **Update status** | One row per computer with the progress or the result of its last update run |
+| Computer > Deploy > **Software updates** | A computer's available updates, update some or all, follow the progress, results of the last run |
+| Deploy > **Software library** | Upload MSI, EXE and MSIX installers to OpenUEM's own winget repository. Windows computers register it automatically and install, update and uninstall the packages with winget, over outbound HTTPS only. |
+| Profiles > task > **Upload** (MSI) | Upload the package instead of giving a URL. Only the profile's agents can download it. |
+| Profiles > task > **Load the script from a file** | Fill a PowerShell or shell script from a local file |
+
+It also fixes the Dockerfile, the Homebrew type check, and the auth server trusting the `Client-Cert` header without a reverse proxy.
+
+Requires the related agent, nats and openuem-cert-manager PRs.
+
+## Deploy section
+
+### Update
+The same flow as install and uninstall, for update:
+- search a package, select the computers, request,
+- `agent.updatepackage` is sent to each computer, and deployments OpenUEM tracks are marked as pending.
+
+The deploy views now take the action (`install`, `update`, `uninstall`, `updateall`) instead of an `install bool`, and a single navbar loops over the tabs. The former `filterByInstallationType=true|false` form values are still accepted, so bookmarked URLs keep working.
+
+### Update all software
+- **Selecting computers:** the existing agent selection (paging, filters, select all) without a package. The selection is scoped to the current organization and site.
+- **Queuing:** a request is published to AGENTS_STREAM (`agent.update.packages.<uuid>`) for each selected computer that belongs to the current organization and site. Online computers start right away. Offline computers start when they connect, through their durable consumer.
+- **Result page:** it lists:
+  - the computers that started,
+  - the offline computers that will start later,
+  - the computers whose request couldn't be sent or queued.
+
+  An offline computer whose agent doesn't support queued requests gets nothing from the stream, because interest-based retention drops messages no consumer wants. This is detected by looking the message up after publishing, and reported as such.
+
+### Update status
+- **Rows:** one per computer of the current organization or site, paged and sorted by name.
+- **Status:** running (x of y), finished (updated / failed / already up to date), failed with the error, offline, offline with an update queued, or the agent doesn't support software updates.
+- **Sources:**
+  - agents are asked with `{"statusonly": true}`, so the package manager doesn't run,
+  - queued requests are read from AGENTS_STREAM,
+  - offline agents answer "no responders" right away.
+- **Refresh:** the page uses the console's usual refresh button and interval. Each computer links to its Software updates page.
+
+## Computer page: Software updates
+
+A **Software updates** button on the Deploy tab opens the page. It's a separate page because the Deploy tab refreshes itself periodically, which would throw away a list that takes the agent up to a few minutes to build. The page:
+- lists the available updates with name, id, installed and available version, source, and whether the package is installed for all users or for a user (user names in a tooltip),
+- updates the selected packages or all of them through `agent.updatepackages`,
+- polls the progress every 15 seconds while the agent works,
+- shows the result of the last run with winget's message for failed packages.
+
+Requests only reach agents of the current organization and site. A timeout is reported separately from "not reachable".
+
+## Uploaded MSI packages and scripts
+
+### Upload
+- The MSI task form gets an Upload button. The file is stored by the console as `<task files dir>/<profile id>/<sha256>/<sanitized name>`.
+- The path field is set to `https://<server>:<auth port>/agent-files/<profile id>/<sha256>/<name>`, using the reverse proxy server and auth port when they are configured.
+- The task is then saved as usual. Old URLs, shares and local paths keep working.
+
+### Download (auth server, `GET /agent-files/:profile/:hash/:name`)
+A file is only served if all of these hold:
+1. The client presents a certificate issued by OpenUEM's CA, for client authentication, with the agents' common name.
+2. The client sends the id of an **enabled** agent in `X-OpenUEM-Agent`.
+3. The profile the file was uploaded for, or the profile of any task that uses it (e.g. a cloned task), applies to that agent. `ProfileAppliesToAgent` uses the worker's rules:
+   - the profile is enabled,
+   - it's global or belongs to the agent's organization or one of its sites,
+   - it applies to all agents or to one of the agent's tags.
+4. The file exists. Profile id, hash and name are validated, so there's no path traversal.
+
+The agents share one client certificate and identify themselves with their id. This is the same trust model upstream already uses when profiles are sent to agents.
+
+### Housekeeping
+- Files no task uses anymore are removed every hour, after a grace period of a day, so a file uploaded for a task that hasn't been saved yet is kept.
+- Interrupted uploads are cleaned up.
+- Saving and cleaning can't run at the same time.
+
+### Storage
+`task-files` in the working directory, configurable with `--task-files-dir` or `TASK_FILES_DIR`. With Docker, `/bin/task-files` must be on a volume to survive container updates. The upload size is limited by the existing max upload size setting.
+
+### Scripts
+PowerShell and shell script tasks get a "Load the script from a file" input. The browser reads the file into the script field, and the script is stored with the task and sent only to the profile's agents, as before.
+
+## Private winget repository
+
+Instead of copying packages to computers, the console hosts its own winget REST source. Computers register it automatically and download packages from the console over HTTPS, so they only need outbound access to the console, which also works for consoles on a VPS.
+
+### Software library (Deploy > Software library)
+- **Upload:** an installer, and the form can stay empty: any field can be overridden. The package identifier defaults to `Publisher.Name` in winget's style.
+  - **MSI:** name, publisher, version and product code come from the Property table (`internal/wingetrepo/msi.go` reads the compound file).
+  - **EXE:** name, publisher and version come from the version resource (`exe.go`). Inno Setup and NSIS installers are recognized by the signatures they carry, WiX Burn bundles by their `.wixburn` section; winget knows the silent switches of all three. Other setup programs must be given their silent switches, otherwise winget would start them without arguments and wait for a click. The manifest lists the program's Apps & features entry, so winget finds the installed version.
+  - **MSIX:** name, publisher, version and architecture come from `AppxManifest.xml` (`msix.go`). The package family name, by which winget recognizes the installed package, is computed from the publisher. Bundles aren't supported.
+  - All packages are installed with machine scope, as the agent runs winget as SYSTEM with `--scope machine`.
+- **Availability:** the current organization or all organizations.
+- **List and delete:** packages and their versions.
+- **Register now:** sends the registration to this organization's computers right away.
+- **Storage:** `winget-repository` in the working directory (`--winget-repository-dir`, `WINGET_REPOSITORY_DIR`; with Docker, `/bin/winget-repository` needs a volume). Each version is a directory with `package.json` and the installer. Uploads are staged in a temporary file first and moved into place, so an interrupted upload never shows up as a package.
+
+### REST source (console web server, `/winget/<agent id>/<token>/...`)
+- **Why the console port and not the auth server:** the auth server asks every client for a certificate (`tls.RequestClientCert`, for the certificate login). winget uses WinHTTP through cpprestsdk, and WinHTTP fails a request with `ERROR_WINHTTP_CLIENT_AUTH_CERT_NEEDED` when the server asks for a certificate and the client doesn't answer; neither winget nor cpprestsdk does. `winget source add` then fails with `0x8A150045`. The web server uses the same certificate without asking, so the source is served there: `https://<server>:<console port>/winget/...`, or `https://<reverse proxy server>/winget/...` behind a reverse proxy. The handlers live with the auth server's (`RegisterWinGetSource`) and are registered on the web server's router before it starts.
+- **Endpoints:** `GET information`, `POST manifestSearch` (query, inclusions and filters with the exact, case-insensitive, starts-with and substring match types; 204 when nothing matches), `GET packageManifests/{id}`, and `GET installers/{id}/{version}/{file}`.
+- **API versions:** 1.0.0 and 1.1.0. The responses were validated against Microsoft's OpenAPI documents from winget-cli-restsource.
+- **Manifests:** an MSI installer with its SHA-256, product code, `AppsAndFeaturesEntries` (so winget matches the installed program and offers updates), silent install modes and machine scope. The installer URL is built from the request's host, so it works behind a reverse proxy.
+- **Authentication:** winget can't present client certificates, so each agent gets its own source URL with an HMAC-SHA256 token of its id, keyed with the console's JWT key. Requests are only answered for **enabled** agents, and only with the packages of the agent's organizations plus the global ones. A package of another organization is "not found".
+- **Errors** are answered as JSON with their status code. The console's error handler renders HTML pages with status 200, which winget can't read.
+- **No CSRF** on these routes (the router skips `/winget/`), as they're called by winget, not by browsers.
+
+### Registration on computers
+- `agent.wingetsource.<agent id>` with the name `OpenUEM`, the agent's URL and `TrustCA` when no reverse proxy is configured (the agent then trusts the OpenUEM CA, which signs the console's certificate).
+- Sent when an agent is admitted, every 30 minutes to all enabled Windows agents, and with the Register button. The agent only runs winget when something changed.
+
+### Profiles
+A profile's winget install task can now pick library packages: the task form's search shows them with "· OpenUEM", and the task installs them from the source `OpenUEM`. The profiles sent to the agents are generated by the agents worker, which needs the same change (related openuem-worker PR).
+
+### Integration with Deploy
+Library packages are added to the software catalog with the source `openuem` (synced with the library every 30 minutes and on every change). They appear in Deploy > Install search, are installed through the existing winget deployment, and are updated by the software updates like any other winget package.
+
+## Fixes
+
+- **Dockerfile:**
+  - the source was copied to `/go`, which is `$GOPATH`, so Go printed `ignoring go.mod in $GOPATH` and built without the module,
+  - `golang:1.26.1` sets `GOTOOLCHAIN=local`, while `go.mod` requires 1.26.2.
+
+  The build stage now uses `WORKDIR /src` and `golang:1.26`. The runtime stage is unchanged and matches the published image.
+- **Homebrew types:** they were checked with `slices.Contains([]string{"cask,formula"}, t)`, a single string, so every brew type was rejected.
+- **`Client-Cert` header:** the auth server accepted a client certificate from this header on any connection that had no TLS client certificate. The header doesn't prove possession of the private key, so anyone who knows a certificate could send it. It's now only used when a reverse proxy is configured (`REVERSE_PROXY_AUTH_PORT`). This also applies to the certificate login; deployments behind NGINX or Caddy keep working. The parsing is shared by the login and the new file endpoint.
+
+## Required NATS permissions (openuem-cert-manager PR)
+
+| User | Permission | Needed for |
+|---|---|---|
+| `CN=OpenUEM Agent` | subscribe `agent.listpackageupdates.> openuem-agent-management`, `agent.updatepackages.> openuem-agent-management` | Software updates page, update all, update status |
+| `CN=OpenUEM Agent` | subscribe `agent.wingetsource.> openuem-agent-management` | Registering the winget repository |
+| `CN=OpenUEM Console` | publish `$JS.API.STREAM.MSG.GET.AGENTS_STREAM` | Optional: showing queued updates |
+
+Separately, `nats.cfg` files generated by the currently published openuem-cert-manager image lack the console's leader election permissions (`$JS.API.INFO`, `$KV.leaders.openuem`, …), which are already in the script on `main`. With such a file, the election fails with `Publish Violation "$JS.API.INFO"`, and the package search stays empty. This isn't caused by this PR, but upgraded deployments need a regenerated `nats.cfg`.
+
+## Translations
+
+All new texts are translated into en, de, es, fr, ca, pt and no. The new templates only use classes that exist in the precompiled `main.css`.
+
+## Tests
+
+### Unit tests
+- **`taskfiles`:** name sanitizing, save and path, profile isolation, path traversal, URL round trip, cleanup with grace period and interrupted uploads.
+- **`ProfileAppliesToAgent`:** 10 cases: global, tag, other tag, own site, other site, other organization, disabled profile, agent waiting for admission, unknown agent, unknown profile.
+- **`/agent-files` handler:** a valid agent; no certificate; a user certificate; a certificate from another CA; an agent outside the profile; no agent id; a missing file; path traversal; a cloned task in another profile; the `Client-Cert` header with and without a reverse proxy.
+- **Parsing deploy actions.**
+- **`wingetrepo`:** EXE version resources and installer detection on a minimal real executable built with LLVM (`testdata/README.md`), MSIX manifests and package family names (Microsoft's own publisher id as reference), per-type validation and manifests, MSI properties (including long strings and non-ASCII names), stream name decoding, package validation, library add/list/versions/remove with tenant visibility, version comparison, search by query, inclusions and filters (exact, substring, product code, normalized name and publisher, unsupported fields), manifests, tokens.
+- **`/winget` handler (end to end over HTTP):** information, wrong token, another agent's token, agent waiting for admission, search limited to the agent's organization, 204 when nothing matches, manifest with the agent's installer URL, installers of another organization, wrong file names, JSON errors.
+- **Package identifiers** built from publisher and name, including accented letters.
+
+### Build and test status
+- `go build ./...`, `go vet ./...` and the new tests pass.
+- `internal/models` has two suites (`TestUserTestSuite`, `TestSMTPTestSuite`) that fail on `main` too.
+- The new views were rendered in en and de with the real translations, checking for missing keys and format errors.
+
+### End-to-end test
+The full stack (this console, the published workers, NATS, PostgreSQL) ran in Docker with a Linux agent from the agent PR in a container, driven in a browser with Playwright:
+- [x] agent admitted, no NATS permission violations
+- [x] Computer > Software updates reaches the agent
+- [x] Update all software: an online computer starts, an offline one is listed as queued, and its request runs once when it reconnects; Update status shows each state
+- [x] Software library: MSI uploaded with an empty form, properties read from the MSI, package listed and found in Deploy > Install search
+- [x] winget REST source over HTTPS with the OpenUEM CA: 401 for a wrong token, 403 before admission, search, manifest, installer download matching its SHA-256; responses valid against Microsoft's 1.0.0 and 1.1.0 OpenAPI documents
+
+### Manual tests
+Tested with a Docker deployment and a Windows 11 endpoint:
+- [x] Software updates page lists the computer's updates
+- [x] Update all software runs on the selected computers
+- [x] Docker image builds with the fixed Dockerfile
+
+Still to be verified before merging:
+- [ ] Update tab on several computers, some without the package (not reported as failed)
+- [ ] Windows computer registers the OpenUEM winget source; a library package is installed from Deploy > Install, updated after a newer version is uploaded, and uninstalled
+- [ ] a package of another organization isn't offered to the computer
+- [ ] MSI uploaded, installed through a task, refused for a computer outside the profile
+- [ ] login with the admin certificate directly and behind a reverse proxy
+- [ ] organization and site URLs (`/tenant/:tenant/...`, `/tenant/:tenant/site/:site/...`)
+
+## Notes
+
+- The upload endpoint checks that the profile exists but, like the existing task routes, not that it belongs to the current organization.
+- winget checks the revocation of the console's certificate. Without a reverse proxy, the certificate's OCSP address (`http://ocsp.<domain>:<OCSP port>`) must be reachable from the computers. The OpenUEM OCSP responder answers both POST and GET requests (Windows uses GET).
+- winget packages aren't signed by OpenUEM: winget checks the installer's SHA-256 from the manifest, and the manifest is served over HTTPS by the console the computer already trusts. Authenticode signatures of the MSI itself are checked by Windows as usual.
+- `go.mod` temporarily replaces `github.com/open-uem/nats` with the fork that contains the new types. Once the nats PR is merged, the replace is replaced by a bump to the merged version.
+
+## Merge order
+
+1. open-uem/nats
+2. open-uem/openuem-cert-manager
+3. open-uem/openuem-agent
+4. **This PR**
+
+## Checklist
+
+- [x] Conventional commit title
+- [x] Builds, vets, unit tests added
+- [x] Translations for all languages
+- [x] Backwards compatible URLs and form values
+- [ ] Manual tests above completed
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01FVN6i1yNq2pA1uqE9wBGDr

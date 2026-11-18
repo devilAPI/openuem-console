@@ -1,0 +1,30 @@
+From 057f2d899d20373ad5d4246f37772d01d8d885df Mon Sep 17 00:00:00 2001
+From: devilAPI <devilAPI@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 14:54:30 +0000
+Subject: [PATCH 2/2] fix: build the Docker image in /src with Go 1.26
+
+The source was copied to /go, which is $GOPATH, so Go ignored go.mod
+("go: warning: ignoring go.mod in $GOPATH"). golang:1.26.1 sets
+GOTOOLCHAIN=local while go.mod requires Go 1.26.2, so the module build
+fails too. Same fix as in openuem-console.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FVN6i1yNq2pA1uqE9wBGDr
+---
+ Dockerfile | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/Dockerfile b/Dockerfile
+index cea26f2..297c024 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,5 @@
+-FROM golang:1.26.1 AS build
++FROM golang:1.26 AS build
++WORKDIR /src
+ COPY . ./
+ RUN go build -o /bin/openuem-worker .
+ 
+-- 
+2.43.0
+

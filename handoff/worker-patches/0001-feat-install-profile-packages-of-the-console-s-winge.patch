@@ -1,0 +1,173 @@
+From f2d05141df93770162eabe25de6105274d925b19 Mon Sep 17 00:00:00 2001
+From: devilAPI <devilAPI@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 14:54:13 +0000
+Subject: [PATCH 1/2] feat: install profile packages of the console's winget
+ repository from it
+
+Profile tasks that install or uninstall a winget package always used
+winget's community repository. Packages uploaded to the console's
+private winget repository (Deploy > Software library, see the related
+openuem-console PR) are in the software package catalog with the source
+"openuem". For those, the WinGet configuration now uses the source
+"OpenUEM", the name under which the agents register the repository, so
+profiles can deploy them to all their computers.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FVN6i1yNq2pA1uqE9wBGDr
+---
+ go.mod                         |  4 ++++
+ internal/common/agent.go       | 22 ++++++++++++++++++++--
+ internal/models/winget.go      | 19 +++++++++++++++++++
+ internal/models/winget_test.go | 34 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 77 insertions(+), 2 deletions(-)
+ create mode 100644 internal/models/winget.go
+ create mode 100644 internal/models/winget_test.go
+
+diff --git a/go.mod b/go.mod
+index 8cdef35..3459da2 100644
+--- a/go.mod
++++ b/go.mod
+@@ -7,12 +7,14 @@ require (
+ 	github.com/a-h/templ v0.3.1001
+ 	github.com/go-co-op/gocron/v2 v2.19.1
+ 	github.com/jackc/pgx/v5 v5.8.0
++	github.com/mattn/go-sqlite3 v1.14.28
+ 	github.com/nats-io/nats.go v1.49.0
+ 	github.com/open-uem/ent v0.0.0-20260427091717-6f7d005adb1d
+ 	github.com/open-uem/nats v0.11.1-0.20260327113100-98373a46adcf
+ 	github.com/open-uem/openuem-ansible-config v0.0.0-20260327072817-2d801600b177
+ 	github.com/open-uem/utils v0.0.0-20260415182213-cb5d4aa4d035
+ 	github.com/open-uem/wingetcfg v0.0.0-20251011111407-80e823d91ea5
++	github.com/stretchr/testify v1.11.1
+ 	github.com/urfave/cli/v2 v2.27.7
+ 	github.com/wneessen/go-mail v0.7.2
+ 	golang.org/x/crypto v0.48.0
+@@ -29,6 +31,7 @@ require (
+ 	github.com/bmatcuk/doublestar v1.3.4 // indirect
+ 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+ 	github.com/danieljoos/wincred v1.2.3 // indirect
++	github.com/davecgh/go-spew v1.1.1 // indirect
+ 	github.com/go-openapi/inflect v0.21.5 // indirect
+ 	github.com/google/go-cmp v0.7.0 // indirect
+ 	github.com/google/uuid v1.6.0 // indirect
+@@ -41,6 +44,7 @@ require (
+ 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
+ 	github.com/nats-io/nkeys v0.4.15 // indirect
+ 	github.com/nats-io/nuid v1.0.1 // indirect
++	github.com/pmezard/go-difflib v1.0.0 // indirect
+ 	github.com/robfig/cron/v3 v3.0.1 // indirect
+ 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+ 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+diff --git a/internal/common/agent.go b/internal/common/agent.go
+index 16f685b..52efe2e 100644
+--- a/internal/common/agent.go
++++ b/internal/common/agent.go
+@@ -431,6 +431,24 @@ func (w *Worker) GetAppliedProfiles(cfg openuem_nats.CfgProfiles) ([]*ent.Profil
+ 	}
+ }
+ 
++// wingetLibrarySource is the name the agents give to the console's private winget
++// repository (WinGetSourceName in openuem-console)
++const wingetLibrarySource = "OpenUEM"
++
++// wingetPackageSource is the winget source a task installs a package from: the console's
++// private repository for the packages uploaded there, winget's community repository
++// otherwise
++func (w *Worker) wingetPackageSource(packageID string) string {
++	isLibraryPackage, err := w.Model.IsLibraryPackage(packageID)
++	if err != nil {
++		log.Printf("[ERROR]: could not check if %s is a package of the console's winget repository, reason: %v", packageID, err)
++	}
++	if isLibraryPackage {
++		return wingetLibrarySource
++	}
++	return "winget"
++}
++
+ func (w *Worker) GenerateWinGetConfig(profile *ent.Profile) (*wingetcfg.WinGetCfg, error) {
+ 	if len(profile.Edges.Tasks) == 0 {
+ 		return nil, nil
+@@ -459,13 +477,13 @@ func (w *Worker) GenerateWinGetConfig(profile *ent.Profile) (*wingetcfg.WinGetCf
+ 
+ 		switch t.Type {
+ 		case task.TypeWingetInstall:
+-			installPackage, err := wingetcfg.InstallPackage(taskID, t.PackageName, t.PackageID, "winget", t.PackageVersion, t.PackageLatest)
++			installPackage, err := wingetcfg.InstallPackage(taskID, t.PackageName, t.PackageID, w.wingetPackageSource(t.PackageID), t.PackageVersion, t.PackageLatest)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+ 			cfg.AddResource(installPackage)
+ 		case task.TypeWingetDelete:
+-			uninstallPackage, err := wingetcfg.UninstallPackage(taskID, t.PackageName, t.PackageID, "winget", t.PackageVersion, t.PackageLatest)
++			uninstallPackage, err := wingetcfg.UninstallPackage(taskID, t.PackageName, t.PackageID, w.wingetPackageSource(t.PackageID), t.PackageVersion, t.PackageLatest)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+diff --git a/internal/models/winget.go b/internal/models/winget.go
+new file mode 100644
+index 0000000..6fcb4ba
+--- /dev/null
++++ b/internal/models/winget.go
+@@ -0,0 +1,19 @@
++package models
++
++import (
++	"context"
++
++	"github.com/open-uem/ent/softwarepackage"
++)
++
++// LibraryPackageSource is the source, in the software package catalog, of the packages
++// uploaded to the console's private winget repository (Deploy > Software library)
++const LibraryPackageSource = "openuem"
++
++// IsLibraryPackage reports if a package id is one of the console's winget repository's
++// packages. They're installed from that repository instead of winget's community one.
++func (m *Model) IsLibraryPackage(packageID string) (bool, error) {
++	return m.Client.SoftwarePackage.Query().
++		Where(softwarepackage.PackageID(packageID), softwarepackage.Source(LibraryPackageSource)).
++		Exist(context.Background())
++}
+diff --git a/internal/models/winget_test.go b/internal/models/winget_test.go
+new file mode 100644
+index 0000000..4b81847
+--- /dev/null
++++ b/internal/models/winget_test.go
+@@ -0,0 +1,34 @@
++package models
++
++import (
++	"context"
++	"testing"
++
++	"github.com/open-uem/ent/enttest"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	_ "github.com/mattn/go-sqlite3"
++)
++
++func TestIsLibraryPackage(t *testing.T) {
++	ctx := context.Background()
++	client := enttest.Open(t, "sqlite3", "file:winget?mode=memory&_fk=1")
++	defer client.Close()
++	m := Model{Client: client}
++
++	client.SoftwarePackage.Create().SetPackageID("Example.Community").SetName("Example").SetSource("winget").ExecX(ctx)
++	client.SoftwarePackage.Create().SetPackageID("ExampleCorp.Tool").SetName("Example Tool").SetSource(LibraryPackageSource).ExecX(ctx)
++
++	isLibrary, err := m.IsLibraryPackage("ExampleCorp.Tool")
++	require.NoError(t, err)
++	assert.True(t, isLibrary)
++
++	isLibrary, err = m.IsLibraryPackage("Example.Community")
++	require.NoError(t, err)
++	assert.False(t, isLibrary)
++
++	isLibrary, err = m.IsLibraryPackage("Unknown.Package")
++	require.NoError(t, err)
++	assert.False(t, isLibrary)
++}
+-- 
+2.43.0
+
