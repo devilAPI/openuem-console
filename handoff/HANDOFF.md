@@ -224,9 +224,8 @@ which weren't tested.
 ## 5. Next steps
 
 1. ~~Fork the worker~~, ~~update server and VM~~, ~~run `TEST_PLAN.md`~~, ~~merge `remove-task-uploads`~~: done 2026-11-18.
-2. **Update the PR descriptions and titles on GitHub** from `pr/*.md` (the agent and console titles still mention uploaded MSI packages), and **open the worker PR** with `pr/worker.md`. Suggested titles:
-   - agent: `feat: list available updates, bulk and queued update runs, user-scoped packages and the console's winget repository`
-   - console: `feat: bulk software updates, update status and a private winget repository`
+2. ~~Update the agent and console PR descriptions and titles~~: done (#216, #499), with `#ISSUE` replaced by `#498`.
+   **Open the worker PR** with `pr/worker.md` (replace `#ISSUE` with `#498`), title `feat: install profile packages of the console's winget repository from it`, from `devilAPI:software-updates` into `open-uem/openuem-worker:main`. The unattended session wasn't allowed to open a new upstream PR.
 3. Optional: test an `.msix` on Windows and the certificate login behind a reverse proxy.
 4. Delete the merged `remove-task-uploads` branches (console, agent).
 5. **After the nats PR is merged:** replace the `replace` pins (see 2.4).

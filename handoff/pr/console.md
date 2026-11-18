@@ -183,7 +183,7 @@ Not tested: login behind a reverse proxy, an MSIX package on Windows (its parsin
 - [x] Builds, vets, unit tests added
 - [x] Translations for all languages
 - [x] Backwards compatible URLs and form values
-- [ ] Manual tests above completed
+- [x] Manual tests above completed (except login behind a reverse proxy and MSIX on Windows, see above)
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
