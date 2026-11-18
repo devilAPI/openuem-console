@@ -325,7 +325,7 @@ func (h *Handler) DeployLibraryRegister(c echo.Context) error {
 func (h *Handler) winGetSourceConfig(agentID string) openuem_nats.WinGetSourceConfig {
 	return openuem_nats.WinGetSourceConfig{
 		Name:    WinGetSourceName,
-		URL:     wingetrepo.SourceURL(h.consoleBaseURL(), []byte(h.JWTKey), agentID),
+		URL:     wingetrepo.SourceURL(h.ConsoleBaseURL(), []byte(h.JWTKey), agentID),
 		TrustCA: h.ReverseProxyServer == "",
 	}
 }
@@ -343,10 +343,10 @@ func (h *Handler) wingetPackageSource(packageID string) string {
 	return "winget"
 }
 
-// consoleBaseURL is the address of the console's web server as the computers reach it.
+// ConsoleBaseURL is the address of the console's web server as the computers reach it.
 // The winget repository is served there because winget can't connect to the auth
 // server, which asks for a client certificate.
-func (h *Handler) consoleBaseURL() string {
+func (h *Handler) ConsoleBaseURL() string {
 	if h.ReverseProxyServer != "" {
 		return "https://" + h.ReverseProxyServer
 	}
