@@ -76,26 +76,23 @@ type SearchVersion struct {
 // Search finds the packages matching a request. As in the reference implementation, the
 // query and the inclusions are alternatives and every filter must match. A request
 // without query and inclusions returns every package.
+//
+// A package matches when one of its versions does, and the response lists all of its
+// versions: winget finds an installed program by the product code of the version that is
+// installed, and offers the newest version of the response as its update.
 func Search(packages []Package, req SearchRequest) SearchResponse {
+	matched := map[string]bool{}
+	for _, p := range packages {
+		if searchMatches(p, req) {
+			matched[strings.ToLower(p.PackageIdentifier)] = true
+		}
+	}
+
 	results := []SearchResult{}
 	index := map[string]int{}
-
 	for _, p := range packages {
-		matches := req.Query == nil && len(req.Inclusions) == 0
-		if req.Query != nil && (matchValue(p.PackageIdentifier, *req.Query) || matchValue(p.PackageName, *req.Query)) {
-			matches = true
-		}
-		for _, inclusion := range req.Inclusions {
-			if matchField(p, inclusion) {
-				matches = true
-			}
-		}
-		for _, filter := range req.Filters {
-			if !matchField(p, filter) {
-				matches = false
-			}
-		}
-		if !matches {
+		key := strings.ToLower(p.PackageIdentifier)
+		if !matched[key] {
 			continue
 		}
 
@@ -104,7 +101,6 @@ func Search(packages []Package, req SearchRequest) SearchResponse {
 			version.ProductCodes = []string{p.ProductCode}
 		}
 
-		key := strings.ToLower(p.PackageIdentifier)
 		if i, ok := index[key]; ok {
 			results[i].Versions = append(results[i].Versions, version)
 			continue
@@ -121,6 +117,25 @@ func Search(packages []Package, req SearchRequest) SearchResponse {
 		})
 	}
 	return SearchResponse{Data: results}
+}
+
+// searchMatches reports whether a version of a package matches a search request
+func searchMatches(p Package, req SearchRequest) bool {
+	matches := req.Query == nil && len(req.Inclusions) == 0
+	if req.Query != nil && (matchValue(p.PackageIdentifier, *req.Query) || matchValue(p.PackageName, *req.Query)) {
+		matches = true
+	}
+	for _, inclusion := range req.Inclusions {
+		if matchField(p, inclusion) {
+			matches = true
+		}
+	}
+	for _, filter := range req.Filters {
+		if !matchField(p, filter) {
+			matches = false
+		}
+	}
+	return matches
 }
 
 // matchField matches the package field a filter is about. Fields the library doesn't

@@ -150,6 +150,15 @@ func TestSearch(t *testing.T) {
 	byProductCode := Search(packages, SearchRequest{Inclusions: []MatchFilter{{PackageMatchField: "ProductCode", RequestMatch: RequestMatch{KeyWord: "{0d8b6a0e-1f2a-4c3b-9d4e-5f6a7b8c9d0e}", MatchType: "Exact"}}}})
 	assert.Equal(t, []string{"Example.TestApp"}, ids(byProductCode))
 	assert.Equal(t, []string{"{0D8B6A0E-1F2A-4C3B-9D4E-5F6A7B8C9D0E}"}, byProductCode.Data[0].Versions[0].ProductCodes)
+	// An installed older version, found by its own product code, is offered the newer
+	// version: the response lists every version of the matching package
+	packages[1].ProductCode = "{11111111-2222-3333-4444-555555555555}"
+	byOldProductCode := Search(packages, SearchRequest{Inclusions: []MatchFilter{{PackageMatchField: "ProductCode", RequestMatch: RequestMatch{KeyWord: "{11111111-2222-3333-4444-555555555555}", MatchType: "Exact"}}}})
+	require.Equal(t, []string{"Example.TestApp"}, ids(byOldProductCode))
+	assert.Equal(t, []SearchVersion{
+		{PackageVersion: "2.0", ProductCodes: []string{"{0D8B6A0E-1F2A-4C3B-9D4E-5F6A7B8C9D0E}"}},
+		{PackageVersion: "1.0", ProductCodes: []string{"{11111111-2222-3333-4444-555555555555}"}},
+	}, byOldProductCode.Data[0].Versions)
 	// Correlation by name and publisher for packages without a product code
 	assert.Equal(t, []string{"Other.Tool"}, ids(Search(packages, SearchRequest{Inclusions: []MatchFilter{{PackageMatchField: "NormalizedPackageNameAndPublisher", RequestMatch: RequestMatch{KeyWord: "othertoolexamplecorp", MatchType: "Exact"}}}})))
 	// Unsupported fields never match
