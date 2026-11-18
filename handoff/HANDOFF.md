@@ -9,7 +9,7 @@ pull request.
 | `HANDOFF.md` | This document |
 | `TEST_PLAN.md` | What still has to be tested on a real Windows computer, with ticks so far |
 | `pr/*.md` | Pull request descriptions (nats, cert-manager, agent, console, worker) and the feature request issue (`issue.md`) |
-| `worker-patches/*.patch` | The openuem-worker commits, until the fork exists (see "Next steps") |
+| `worker-patches/*.patch` | The openuem-worker commits as patches (the fork's `software-updates` branch has them too) |
 | `../install-openuem-fork.sh` | Installs or updates the server (Debian 13, Docker) with the fork |
 | `../install-openuem-agent-fork.ps1` | Installs or updates the fork's agent on Windows |
 
@@ -60,7 +60,7 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 | openuem-agent | `1c0972c` | `3a8e4b2` | `80dcb93` |
 | openuem-console | `193fefc` | `61ebb9f` | `6e6dbb1` |
 | openuem-cert-manager | – | `626b464` | – |
-| openuem-worker | – | `057f2d8`, **fork doesn't exist yet**, see `worker-patches/` | – |
+| openuem-worker | – | `826d9d0` | – |
 | install-script (console repo) | | | this commit |
 
 ### 2.3 Commits of the PR branches
@@ -82,8 +82,8 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `c27d686` EXE and MSIX
   - `61ebb9f` profile tasks can use library packages
 - **worker:**
-  - `f2d0514` profile tasks use the source `OpenUEM` for library packages
-  - `057f2d8` Dockerfile fix
+  - `c6980f8` profile tasks use the source `OpenUEM` for library packages
+  - `826d9d0` Dockerfile fix
 
 ### 2.4 Temporary dependency pins
 
@@ -199,14 +199,7 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 
 ## 5. Next steps
 
-1. **Fork `open-uem/openuem-worker` to `devilAPI`**, then push the branch, either from a clone that has it or by applying `worker-patches/`:
-   ```bash
-   git clone https://github.com/devilAPI/openuem-worker && cd openuem-worker
-   git checkout -b software-updates origin/main
-   git am /path/to/handoff/worker-patches/*.patch
-   git push -u origin software-updates
-   ```
-   The next server update then builds the worker from the fork.
+1. ~~Fork `open-uem/openuem-worker`~~: done, `devilAPI/openuem-worker` branch `software-updates`. The next server update builds the agents worker from it.
 2. **Update the server and the VM** (commands in `TEST_PLAN.md`), click **Register** in Deploy → Software library, and check the agent log. If it fails, the log now contains winget's own lines (an HRESULT such as `80072F8F` or `80072F0C`). Those decide the next fix.
 3. **Run the rest of `TEST_PLAN.md`.**
 4. **Once a profile installs a library package on Windows, merge `remove-task-uploads`** (the user's condition: remove the task upload only if the functionality is preserved):
