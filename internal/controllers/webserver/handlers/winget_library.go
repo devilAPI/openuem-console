@@ -227,7 +227,18 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 		}
 	}
 
+	// Tasks install a library package from the repository, any other identifier from
+	// winget's community repository, so a library package can't reuse a community one
+	if otherSource, err := h.Model.IsPackageOfOtherSource(p.PackageIdentifier); err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
+	} else if otherSource {
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.id_of_other_source", p.PackageIdentifier), false))
+	}
+
 	added, err := h.WinGetLibrary.Add(p, staged)
+	if errors.Is(err, wingetrepo.ErrPackageOwned) {
+		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.id_owned", p.PackageIdentifier), false))
+	}
 	if errors.Is(err, wingetrepo.ErrInvalidPackage) {
 		return RenderError(c, partials.ErrorMessage(i18n.T(ctx, "library.invalid_package", p.PackageIdentifier, p.PackageVersion), false))
 	}
