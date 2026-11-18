@@ -486,6 +486,8 @@ func inspectInstaller(path, extension string) (installerDetails, error) {
 // identifier and winget offers the newer one as the update of the installed one.
 func defaultPackageIdentifier(publisher, name, version string) string {
 	name = removeVersion(name, version)
+	// The publisher of an EXE's version resource may contain an e-mail address or a URL
+	publisher = contactPattern.ReplaceAllString(publisher, " ")
 
 	part := func(s string) string {
 		// Keep the base letter of accented characters (Müller -> Muller)
@@ -508,6 +510,9 @@ func defaultPackageIdentifier(publisher, name, version string) string {
 	}
 	return fmt.Sprintf("%s.%s", part(publisher), part(name))
 }
+
+// contactPattern matches e-mail addresses and web addresses, with optional brackets
+var contactPattern = regexp.MustCompile(`(?i)[(<\[]?\s*(\S+@\S+\.\S+|https?://\S+|www\.\S+)\s*[)>\]]?`)
 
 // removeVersion removes the version, or its first parts (24.08 of 24.08.00.0), from a
 // product name, when it stands as a word of its own, optionally with a leading "v". At

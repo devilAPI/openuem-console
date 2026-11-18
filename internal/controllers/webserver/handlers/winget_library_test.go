@@ -23,6 +23,11 @@ func TestDefaultPackageIdentifier(t *testing.T) {
 	assert.Equal(t, "ExampleCorp.Tool2", defaultPackageIdentifier("Example Corp", "Tool 2", "2.0"), "a single number isn't a version")
 	assert.Equal(t, "ExampleCorp.Tool2410", defaultPackageIdentifier("Example Corp", "Tool 24.10", "24.08"), "another version stays")
 
+	// Contact details in the publisher of an EXE's version resource are left out
+	assert.Equal(t, "DonHO.Notepad", defaultPackageIdentifier("Don HO don.h@free.fr", "Notepad++", "8.7"))
+	assert.Equal(t, "ExampleCorp.Tool", defaultPackageIdentifier("Example Corp (https://example.com)", "Tool", "1.0"))
+	assert.Equal(t, "ExampleCorp.Tool", defaultPackageIdentifier("Example Corp www.example.com", "Tool", "1.0"))
+
 	p := wingetrepo.Package{PackageIdentifier: defaultPackageIdentifier("7-Zip", "7-Zip 24.08 (x64)", "24.08"), PackageVersion: "24.08", PackageName: "7-Zip", Publisher: "7-Zip", Architecture: "neutral", InstallerFile: "7z.msi"}
 	assert.Equal(t, "7Zip.7ZipX64", p.PackageIdentifier)
 	assert.NoError(t, p.Validate(), "derived identifiers are valid")
