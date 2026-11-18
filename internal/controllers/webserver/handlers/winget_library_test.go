@@ -10,12 +10,21 @@ import (
 )
 
 func TestDefaultPackageIdentifier(t *testing.T) {
-	assert.Equal(t, "ExampleCorp.TestApp", defaultPackageIdentifier("Example Corp.", "Test App"))
-	assert.Equal(t, "MullerSohne.TestAppUnicode", defaultPackageIdentifier("Müller & Söhne", "Test App ünicode"))
-	assert.Equal(t, "Mozilla.FirefoxESRX64DeDE", defaultPackageIdentifier("Mozilla", "Firefox ESR (x64 de-DE)"))
+	assert.Equal(t, "ExampleCorp.TestApp", defaultPackageIdentifier("Example Corp.", "Test App", "1.0"))
+	assert.Equal(t, "MullerSohne.TestAppUnicode", defaultPackageIdentifier("Müller & Söhne", "Test App ünicode", "1.0"))
+	assert.Equal(t, "Mozilla.FirefoxESRX64DeDE", defaultPackageIdentifier("Mozilla", "Firefox ESR (x64 de-DE)", "128.0"))
 
-	p := wingetrepo.Package{PackageIdentifier: defaultPackageIdentifier("7-Zip", "7-Zip 24.08 (x64)"), PackageVersion: "24.08", PackageName: "7-Zip", Publisher: "7-Zip", Architecture: "neutral", InstallerFile: "7z.msi"}
-	assert.Equal(t, "7Zip.7Zip2408X64", p.PackageIdentifier)
+	// The version in a product name is left out, so every version of a program gets the
+	// same identifier and winget offers the newer one as its update
+	assert.Equal(t, "IgorPavlov.7ZipX64Edition", defaultPackageIdentifier("Igor Pavlov", "7-Zip 24.08 (x64 edition)", "24.08.00.0"))
+	assert.Equal(t, "IgorPavlov.7ZipX64Edition", defaultPackageIdentifier("Igor Pavlov", "7-Zip 24.09 (x64 edition)", "24.09.00.0"))
+	assert.Equal(t, "Mozilla.FirefoxESRX64DeDE", defaultPackageIdentifier("Mozilla", "Firefox 128.5.1 ESR (x64 de-DE)", "128.5.1"))
+	assert.Equal(t, "ExampleCorp.Tool", defaultPackageIdentifier("Example Corp", "Tool v3.1.4", "3.1.4.0"))
+	assert.Equal(t, "ExampleCorp.Tool2", defaultPackageIdentifier("Example Corp", "Tool 2", "2.0"), "a single number isn't a version")
+	assert.Equal(t, "ExampleCorp.Tool2410", defaultPackageIdentifier("Example Corp", "Tool 24.10", "24.08"), "another version stays")
+
+	p := wingetrepo.Package{PackageIdentifier: defaultPackageIdentifier("7-Zip", "7-Zip 24.08 (x64)", "24.08"), PackageVersion: "24.08", PackageName: "7-Zip", Publisher: "7-Zip", Architecture: "neutral", InstallerFile: "7z.msi"}
+	assert.Equal(t, "7Zip.7ZipX64", p.PackageIdentifier)
 	assert.NoError(t, p.Validate(), "derived identifiers are valid")
 }
 

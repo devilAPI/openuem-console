@@ -144,7 +144,7 @@ func (h *Handler) DeployLibraryUpload(c echo.Context) error {
 		}
 	}
 	if p.PackageIdentifier == "" {
-		p.PackageIdentifier = defaultPackageIdentifier(p.Publisher, p.PackageName)
+		p.PackageIdentifier = defaultPackageIdentifier(p.Publisher, p.PackageName, p.PackageVersion)
 	}
 	if !strings.HasSuffix(strings.ToLower(p.InstallerFile), extension) {
 		p.InstallerFile += extension
@@ -438,9 +438,13 @@ func inspectInstaller(path, extension string) (installerDetails, error) {
 	return installerDetails{}, errors.New("unsupported installer")
 }
 
-// defaultPackageIdentifier builds a winget identifier like Publisher.Name from the MSI's
-// manufacturer and product name
-func defaultPackageIdentifier(publisher, name string) string {
+// defaultPackageIdentifier builds a winget identifier like Publisher.Name from the
+// installer's publisher and product name. A version in the product name, as in
+// "7-Zip 24.08 (x64 edition)", is left out, so every version of a program gets the same
+// identifier and winget offers the newer one as the update of the installed one.
+func defaultPackageIdentifier(publisher, name, version string) string {
+	name = removeVersion(name, version)
+
 	part := func(s string) string {
 		// Keep the base letter of accented characters (Müller -> Muller)
 		if plain, _, err := transform.String(transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn))), s); err == nil {
@@ -461,6 +465,21 @@ func defaultPackageIdentifier(publisher, name string) string {
 		return joined
 	}
 	return fmt.Sprintf("%s.%s", part(publisher), part(name))
+}
+
+// removeVersion removes the version, or its first parts (24.08 of 24.08.00.0), from a
+// product name, when it stands as a word of its own, optionally with a leading "v". At
+// least two parts must match, so the 7 of "7-Zip" isn't taken for version 7.
+func removeVersion(name, version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	for n := len(parts); n >= 2; n-- {
+		v := strings.Join(parts[:n], ".")
+		pattern := regexp.MustCompile(`(?i)(^|[^\pL\pN.])v?` + regexp.QuoteMeta(v) + `($|[^\pL\pN.])`)
+		if pattern.MatchString(name) {
+			return pattern.ReplaceAllString(name, "$1 $2")
+		}
+	}
+	return name
 }
 
 func firstNotEmpty(values ...string) string {
