@@ -109,6 +109,7 @@ func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
 
 	f := filters.DeployPackageFilter{}
 	f.Sources = filteredSources
+	f.ExcludePackageIDs = h.hiddenLibraryPackages(commonInfo)
 
 	itemsPerPage, err := h.Model.GetDefaultItemsPerPage()
 	if err != nil {

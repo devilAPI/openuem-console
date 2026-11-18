@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/open-uem/ent"
 	"github.com/open-uem/ent/enttest"
+	"github.com/open-uem/openuem-console/internal/views/filters"
+	"github.com/open-uem/openuem-console/internal/views/partials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,13 +30,30 @@ func TestLibraryPackagesInCatalog(t *testing.T) {
 	assert.False(t, isLibrary, "a package of winget's community repository")
 
 	// The task form's search finds both winget sources, not other package managers
-	found, err := m.SearchAllWingetPackages("example tool")
-	require.NoError(t, err)
-	ids := []string{}
-	for _, p := range found {
-		ids = append(ids, p.PackageID)
+	ids := func(packages []*ent.SoftwarePackage) []string {
+		out := []string{}
+		for _, p := range packages {
+			out = append(out, p.PackageID)
+		}
+		return out
 	}
-	assert.ElementsMatch(t, []string{"Example.Community", "ExampleCorp.Tool"}, ids)
+	found, err := m.SearchAllWingetPackages("example tool", nil)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"Example.Community", "ExampleCorp.Tool"}, ids(found))
+
+	// Packages of the repository that belong to other organizations are left out
+	found, err = m.SearchAllWingetPackages("example tool", []string{"ExampleCorp.Tool"})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"Example.Community"}, ids(found))
+
+	// The same in the Deploy search
+	f := filters.DeployPackageFilter{Sources: []string{"winget", LibraryPackageSource}, ExcludePackageIDs: []string{"ExampleCorp.Tool"}}
+	found, err = m.SearchPackages("example tool", partials.PaginationAndSort{SortBy: "name", SortOrder: "asc", CurrentPage: 1, PageSize: 10}, f)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"Example.Community"}, ids(found))
+	count, err := m.CountPackages("example tool", f)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 
 	require.NoError(t, m.RemoveLibraryPackageFromCatalog("ExampleCorp.Tool"))
 	isLibrary, err = m.IsLibraryPackage("ExampleCorp.Tool")

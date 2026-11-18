@@ -47,3 +47,14 @@ func TestInspectInstaller(t *testing.T) {
 	_, err = inspectInstaller(filepath.Join(testdata, "test.msi"), ".zip")
 	assert.Error(t, err)
 }
+
+func TestHiddenLibraryPackageIDs(t *testing.T) {
+	pkg := func(id string, tenantID int) wingetrepo.Package {
+		return wingetrepo.Package{PackageIdentifier: id, TenantID: tenantID}
+	}
+	all := []wingetrepo.Package{pkg("Org1.App", 1), pkg("Org2.App", 2), pkg("Global.App", 0), pkg("Shared.App", 2), pkg("Shared.App", 1)}
+
+	assert.Equal(t, []string{"Org2.App"}, hiddenLibraryPackageIDs(all, 1), "another organization's packages are hidden, unless a version is visible")
+	assert.Equal(t, []string{"Org1.App"}, hiddenLibraryPackageIDs(all, 2))
+	assert.Empty(t, hiddenLibraryPackageIDs(all, -1), "all organizations")
+}

@@ -82,6 +82,48 @@ func (h *Handler) libraryPackages(commonInfo *partials.CommonInfo) ([]wingetrepo
 	return packages, nil
 }
 
+// hiddenLibraryPackageIDs returns the identifiers of the library packages the current
+// organization can't install. The package catalog is shared by all organizations, so
+// the package searches leave these out. Nothing is hidden when all organizations are
+// selected (-1).
+func hiddenLibraryPackageIDs(all []wingetrepo.Package, tenantID int) []string {
+	if tenantID == -1 {
+		return nil
+	}
+	visible := map[string]bool{}
+	for _, p := range all {
+		if p.VisibleTo([]int{tenantID}) {
+			visible[p.PackageIdentifier] = true
+		}
+	}
+	hidden := []string{}
+	seen := map[string]bool{}
+	for _, p := range all {
+		if !visible[p.PackageIdentifier] && !seen[p.PackageIdentifier] {
+			seen[p.PackageIdentifier] = true
+			hidden = append(hidden, p.PackageIdentifier)
+		}
+	}
+	return hidden
+}
+
+// hiddenLibraryPackages returns the library packages hidden from the current organization
+func (h *Handler) hiddenLibraryPackages(commonInfo *partials.CommonInfo) []string {
+	if h.WinGetLibrary == nil {
+		return nil
+	}
+	all, err := h.WinGetLibrary.List()
+	if err != nil {
+		log.Printf("[ERROR]: could not list the packages of the winget repository, reason: %v", err)
+		return nil
+	}
+	tenantID, err := strconv.Atoi(commonInfo.TenantID)
+	if err != nil {
+		return nil
+	}
+	return hiddenLibraryPackageIDs(all, tenantID)
+}
+
 // DeployLibraryUpload adds an MSI package to the repository. Empty fields are filled with
 // the properties of the MSI package.
 func (h *Handler) DeployLibraryUpload(c echo.Context) error {

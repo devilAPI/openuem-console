@@ -11,6 +11,11 @@ import (
 func (h *Handler) SearchWingetPackages(c echo.Context) error {
 	var err error
 
+	commonInfo, err := h.GetCommonInfo(c)
+	if err != nil {
+		return err
+	}
+
 	search := c.FormValue("package-search")
 	if search == "" {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "install.search_empty_error"), true))
@@ -31,7 +36,7 @@ func (h *Handler) SearchWingetPackages(c echo.Context) error {
 		p.SortOrder = "asc"
 	}
 
-	packages, err := h.Model.SearchAllWingetPackages(search)
+	packages, err := h.Model.SearchAllWingetPackages(search, h.hiddenLibraryPackages(commonInfo))
 	if err != nil {
 		return RenderError(c, partials.ErrorMessage(err.Error(), true))
 	}
