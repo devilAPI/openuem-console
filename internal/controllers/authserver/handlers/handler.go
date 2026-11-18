@@ -7,7 +7,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/open-uem/openuem-console/internal/controllers/sessions"
 	"github.com/open-uem/openuem-console/internal/models"
-	"github.com/open-uem/openuem-console/internal/taskfiles"
 	"github.com/open-uem/openuem-console/internal/wingetrepo"
 )
 
@@ -19,7 +18,6 @@ type Handler struct {
 	ConsolePort          string
 	ReverseProxyAuthPort string
 	EncryptionMasterKey  string
-	TaskFiles            *taskfiles.Store
 	WinGetLibrary        *wingetrepo.Library
 	// WinGetKey signs the agents' tokens of the winget repository
 	WinGetKey []byte

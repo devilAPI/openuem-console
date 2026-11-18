@@ -6,7 +6,6 @@ import (
 
 func (h *Handler) Register(e *echo.Echo) {
 	e.GET("/auth", h.Auth)
-	e.GET("/agent-files/:profile/:hash/:name", h.AgentFile)
 }
 
 // RegisterWinGetSource adds the private winget repository (WinGet REST source) for the

@@ -226,3 +226,15 @@ func TestBuildManifestInstallerTypes(t *testing.T) {
 	assert.NotContains(t, string(data), "InstallerSwitches", "no empty switches in the manifest")
 	assert.NotContains(t, string(data), "PackageFamilyName")
 }
+
+func TestSanitizeInstallerName(t *testing.T) {
+	assert.Equal(t, "setup.msi", SanitizeInstallerName("setup.msi"))
+	assert.Equal(t, "setup.exe", SanitizeInstallerName(`C:\Users\me\Downloads\setup.exe`))
+	assert.Equal(t, "setup.msi", SanitizeInstallerName("../../setup.msi"))
+	assert.Equal(t, "My_App_1.2_x64_.msix", SanitizeInstallerName("My App 1.2 (x64).msix"))
+	assert.Equal(t, "a_b.msi", SanitizeInstallerName("a'\"b.msi"))
+	assert.Equal(t, "", SanitizeInstallerName(".."))
+	long := SanitizeInstallerName(strings.Repeat("a", 300) + ".msi")
+	assert.Len(t, long, 120)
+	assert.True(t, installerFilePattern.MatchString(long), "a long name is still a valid installer name")
+}
