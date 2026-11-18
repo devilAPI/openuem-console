@@ -212,12 +212,16 @@ $remoteFiles = @(
 )
 if (-not $OfficialOnly) { $remoteFiles += "agent-builds/latest/windows-amd64/openuem-agent.exe" }
 
-# One SSH connection: the server packs the files with tar. cmd.exe is used for the
-# redirection because PowerShell 5.1 would corrupt the binary output.
+# One SSH connection: the server packs the files with tar. Start-Process writes the
+# binary output to the file unchanged (PowerShell 5.1's redirection would corrupt it).
+# A cmd.exe redirection hangs on larger output when the script itself runs without a
+# console (over SSH or a remote management tool). ssh still asks for the password on
+# the console.
 $tarFile = Join-Path $WorkDir "openuem-files.tar"
 $remoteCmd = "tar -C /opt/openuem -chf - " + ($remoteFiles -join " ")
-cmd.exe /c "ssh -p $SshPort $SshUser@$ServerIP `"$remoteCmd`" > `"$tarFile`""
-if ($LASTEXITCODE -ne 0) { throw "Copying the files from the server failed" }
+$ssh = Start-Process -FilePath "ssh.exe" -ArgumentList "-p $SshPort $SshUser@$ServerIP `"$remoteCmd`"" `
+    -RedirectStandardOutput $tarFile -NoNewWindow -Wait -PassThru
+if ($ssh.ExitCode -ne 0) { throw "Copying the files from the server failed (ssh exit code $($ssh.ExitCode))" }
 tar.exe -xf $tarFile -C $WorkDir
 if ($LASTEXITCODE -ne 0) { throw "Could not extract $tarFile" }
 Remove-Item $tarFile
