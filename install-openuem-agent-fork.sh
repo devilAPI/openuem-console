@@ -194,19 +194,25 @@ extract_deb() {
     local deb="$1" member tmp
     if command -v dpkg-deb >/dev/null; then
         dpkg-deb -x "$deb" /
-    elif command -v bsdtar >/dev/null; then
-        # libarchive reads the data.tar.* payload of a .deb directly
-        bsdtar -xf "$deb" -C /
-    elif command -v ar >/dev/null; then
-        tmp="$(mktemp -d)"
+        return
+    fi
+    # No dpkg-deb (e.g. Arch): pull the data.tar.* member out of the ar archive and untar
+    # it; tar auto-detects the compression (xz/zst/gz)
+    tmp="$(mktemp -d)"
+    if command -v ar >/dev/null; then
         member="$(ar t "$deb" | grep -E '^data\.tar\.' | head -n1)"
         [ -n "$member" ] || die "no data.tar.* in $deb"
         ar p "$deb" "$member" >"$tmp/data.tar"
-        tar -xf "$tmp/data.tar" -C /
-        rm -rf "$tmp"
+    elif command -v bsdtar >/dev/null; then
+        member="$(bsdtar -tf "$deb" | grep -E '^data\.tar\.' | head -n1)"
+        [ -n "$member" ] || die "no data.tar.* in $deb"
+        bsdtar -xOf "$deb" "$member" >"$tmp/data.tar"
     else
-        die "cannot extract $deb: install dpkg-deb, bsdtar (libarchive) or ar (binutils) first"
+        rm -rf "$tmp"
+        die "cannot extract $deb: install dpkg-deb, ar (binutils) or bsdtar (libarchive) first"
     fi
+    tar -xf "$tmp/data.tar" -C /
+    rm -rf "$tmp"
 }
 
 PACKAGE_MANAGER=""
