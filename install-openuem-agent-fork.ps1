@@ -29,6 +29,10 @@
     .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -P 2222
 
 .EXAMPLE
+    # Add a new computer to organization 2, site 3
+    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -OrgID 2 -SiteID 3
+
+.EXAMPLE
     # Update with the settings of the last run
     .\install-openuem-agent-fork.ps1
 
@@ -60,13 +64,37 @@ param(
     # instead of copying them from the server over SSH (used by the setup program)
     [string]$FilesDir,
     # Write the output to %ProgramData%\OpenUEM-fork\install-agent.log
-    [switch]$Log
+    [switch]$Log,
+    # Organization (tenant) and site IDs, both or none: the computer is added to this site
+    # instead of the default one when it registers for the first time. The IDs are in the
+    # console's address bar: .../tenant/<OrgID>/site/<SiteID>/...
+    [ValidatePattern('^[0-9]*$')][string]$OrgID,
+    [ValidatePattern('^[0-9]*$')][string]$SiteID
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 function Write-Step($message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
+
+# Sets key = value in a section of an INI file
+function Set-IniValue($path, $section, $key, $value) {
+    $lines = [System.Collections.Generic.List[string]]@(Get-Content $path)
+    $inSection = $false; $sectionEnd = -1; $done = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*\[(.+)\]\s*$') {
+            if ($inSection) { $sectionEnd = $i; break }
+            $inSection = ($Matches[1] -eq $section)
+            if ($inSection) { $sectionEnd = $lines.Count }
+        } elseif ($inSection -and $lines[$i] -match "^\s*$([regex]::Escape($key))\s*=") {
+            $lines[$i] = "$key = $value"; $done = $true; break
+        }
+    }
+    if (-not $done) {
+        if ($sectionEnd -ge 0) { $lines.Insert($sectionEnd, "$key = $value") } else { $lines.Add("[$section]"); $lines.Add("$key = $value") }
+    }
+    [System.IO.File]::WriteAllLines($path, $lines, (New-Object System.Text.UTF8Encoding $false))
+}
 
 if ($Log) {
     $logFile = Join-Path $env:ProgramData "OpenUEM-fork\install-agent.log"
@@ -141,6 +169,11 @@ if (-not $ServerIP -and $Domain) {
             Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1
         if ($address) { Use-Setting "ServerIP" $address.IPAddressToString "DNS" }
     } catch { }
+}
+
+# The server only accepts both IDs together and rejects the computer if they don't match
+if (([bool]$OrgID) -ne ([bool]$SiteID)) {
+    throw "-OrgID and -SiteID must be given together (see the console's address bar: /tenant/<OrgID>/site/<SiteID>/)"
 }
 
 if (-not $ServerIP -or -not $Domain) {
@@ -314,6 +347,10 @@ if ($service) {
 
     for ($i = 0; $i -lt 60 -and -not (Get-Service openuem-agent -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
     if (-not (Get-Service openuem-agent -ErrorAction SilentlyContinue)) { throw "The openuem-agent service was not created" }
+    # Stop the official agent before its first report: the organization and the fork's
+    # binary must be in place when the computer registers
+    try { Stop-Service openuem-agent -Force -ErrorAction Stop } catch { }
+    Get-Process -Name openuem-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 # --- Fork's agent -------------------------------------------------------------
@@ -333,6 +370,18 @@ if (-not $OfficialOnly) {
 }
 # The installer copied the certificates to the agent's folder
 Remove-CopiedFiles
+
+if ($OrgID) {
+    $iniFile = Join-Path (Split-Path $agentExe) "config\openuem.ini"
+    if (-not (Test-Path $iniFile)) { throw "$iniFile was not found" }
+    Write-Step "Setting organization $OrgID, site $SiteID"
+    if ($wasInstalled) {
+        Write-Warning "This computer is already registered: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview)."
+    }
+    Stop-Service openuem-agent -Force -ErrorAction SilentlyContinue
+    Set-IniValue $iniFile "Agent" "TenantID" $OrgID
+    Set-IniValue $iniFile "Agent" "SiteID" $SiteID
+}
 
 $startTime = Get-Date
 try {

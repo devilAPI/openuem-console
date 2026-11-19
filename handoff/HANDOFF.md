@@ -205,6 +205,19 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
 - **Secret:** it contains the agents' private key, like the certificate files the official installer needs. The file is root-only (600) on the server; keep it on internal shares.
 - **Not an MSI:** GPO software installation needs an MSI, so use a startup script (`\\server\share\openuem-agent-fork-setup.exe`) instead.
+- **Organization and site:** `/ORG=<id> /SITE=<id>` (both, numeric; the IDs are in the console's address bar `/tenant/<org>/site/<site>/`). `/DOMAIN=` and `/SERVERIP=` override the built-in settings. The script stops the official agent right after its setup, before its first report, and writes `TenantID`/`SiteID` into `config\openuem.ini`. The worker only uses them when a computer registers; it rejects reports with an invalid pair. Tested: a fresh install with `/ORG=2 /SITE=2` landed in site 2, and `/ORG` alone fails with exit code 1.
+
+**Linux installer** (`install-openuem-agent-fork.sh`, built as `agent-builds/latest/linux/openuem-agent-fork-install.sh`):
+
+- **Self-contained:** the server script appends a tarball with the certificates, the amd64 and arm64 agents and `settings.env` (server IP, domain, ports, commit). Run it with `sudo bash openuem-agent-fork-install.sh [--org <id> --site <id>] [--domain …] [--server-ip …] [--nats-port …] [--skip-hosts]`.
+- **No official package needed:** it uses the official package's layout (`/opt/openuem-agent/bin`, `/etc/openuem-agent`, the `openuem-agent` service and group). If the official .deb, pacman or rpm package is installed, it replaces the binary (keeping `.official`), keeps the configuration and disables the official updater. This also avoids the .deb's debconf loop.
+- **Distributions:** any systemd distribution. The agent is a static Go binary, so the kernel version and the C library don't matter. Inventory and update status come from the upstream agent, which reads dpkg and rpm: on Arch only Flatpak and Snap apps are listed, and the update status is "unknown".
+- **Tested on the VMs (2026-11-19):**
+  - Arch Linux on mainline kernel 7.3.4: a fresh install with `--org 2 --site 2` landed in site 2, then an update;
+  - the same VM on `linux-lts` 6.18.64 after a reboot: the agent is running and connected;
+  - Debian 13 on 6.12 LTS: took over an existing configuration;
+  - `--org` without `--site` is refused.
+  - Not tested: the takeover of an installed official .deb.
 - **Tested on the VMs (2026-11-19):**
   - update as SYSTEM (`/S`): exit code 0, binary replaced;
   - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, hosts entries added, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;
