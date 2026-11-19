@@ -624,10 +624,10 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive WINEARCH=win32
 RUN dpkg --add-architecture i386 \\
     && apt-get update -qq \\
-    && apt-get install -y -qq --no-install-recommends wine wine32:i386 wine64 curl ca-certificates >/dev/null \\
+    && apt-get install -y -qq --no-install-recommends wine wine32:i386 wine64 xvfb xauth curl ca-certificates >/dev/null \\
     && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL -o /tmp/innosetup.exe "https://github.com/jrsoftware/issrc/releases/download/${INNO_SETUP_TAG}/innosetup-${INNO_SETUP_VERSION}.exe" \\
-    && wine /tmp/innosetup.exe /VERYSILENT /SUPPRESSMSGBOXES /ALLUSERS /SP- /NORESTART \\
+    && xvfb-run -a wine /tmp/innosetup.exe /VERYSILENT /SUPPRESSMSGBOXES /ALLUSERS /SP- /NORESTART \\
     && rm -f /tmp/innosetup.exe
 WORKDIR /build
 DOCKERFILE_EOF
