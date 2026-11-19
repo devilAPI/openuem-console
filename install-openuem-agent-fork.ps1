@@ -165,15 +165,20 @@ foreach ($tool in $(if ($FilesDir) { @() } else { "ssh.exe", "tar.exe" })) {
 
 # --- Hosts entries ------------------------------------------------------------
 $names = "console", "nats", "ocsp" | ForEach-Object { "$_.$Domain" }
-if (-not $SkipHosts -and $HostsIfUnresolved) {
+$hostsNeeded = -not $SkipHosts
+if ($hostsNeeded -and $HostsIfUnresolved) {
     # Names that DNS resolves (the hosts file not counted) don't need an entry
-    $unresolved = @($names | Where-Object { -not (Resolve-DnsName $_ -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction SilentlyContinue) })
+    # A name that doesn't exist returns only the zone's SOA record, without an error
+    $unresolved = @($names | Where-Object {
+        -not (Resolve-DnsName $_ -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction SilentlyContinue |
+            Where-Object { $_.Type -eq "A" -or $_.Type -eq "AAAA" })
+    })
     if ($unresolved.Count -eq 0) {
         Write-Step "DNS resolves $($names -join ', '), no hosts entries needed"
-        $SkipHosts = $true
+        $hostsNeeded = $false
     }
 }
-if (-not $SkipHosts) {
+if ($hostsNeeded) {
     $hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
     $current = @(Get-Content $hostsFile)
 

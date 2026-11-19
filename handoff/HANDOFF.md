@@ -205,6 +205,12 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
 - **Secret:** it contains the agents' private key, like the certificate files the official installer needs. The file is root-only (600) on the server; keep it on internal shares.
 - **Not an MSI:** GPO software installation needs an MSI, so use a startup script (`\\server\share\openuem-agent-fork-setup.exe`) instead.
+- **Tested on the VMs (2026-11-19):**
+  - update as SYSTEM (`/S`): exit code 0, binary replaced;
+  - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, hosts entries added, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;
+  - failure (NATS not reachable): exit code 1 with the reason in the log;
+  - afterwards `C:\openuem-agent` is empty and only administrators and SYSTEM have access, and the setup's temp folder is gone;
+  - the server script piped from GitHub and run as a local file both build it.
 
 ## 4. Status
 
