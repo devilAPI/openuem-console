@@ -616,7 +616,7 @@ begin
     names[5] := 'agent.key';
     names[6] := 'sftp.cer';
     for i := 0 to GetArrayLength(names) - 1 do
-      ExtractTemporaryFile('files\' + names[i]);
+      ExtractTemporaryFile(names[i]);
     WorkerExitCode := RunWorker(ExpandConstant('{tmp}'));
     DelTree(ExpandConstant('{tmp}'), True, True, True);
     ExitProcess(WorkerExitCode);
