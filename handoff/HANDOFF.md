@@ -247,8 +247,28 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 
 **On Windows 11 VMs, 2026-11-18 (unattended run):** the whole `TEST_PLAN.md`, with the
 server and agent installed by the install scripts. Everything passed after the fixes
-below, except the optional MSIX upload on Windows and the login behind a reverse proxy,
-which weren't tested.
+below, except the optional MSIX upload on Windows, which wasn't tested.
+
+**Behind a reverse proxy (Caddy), 2026-11-19, on the server VM:** enabled the official
+`compose.caddy.yml` (see the known upstream issue in section 7: the shipped Caddyfile
+crash-loops, delete the `//`-commented block first), generated
+`certificates/console/proxy.cer`/`proxy.key` for `console.<domain>` signed by the
+OpenUEM CA, and set `REVERSE_PROXY_HOST=console.<domain>`,
+`REVERSE_PROXY_CONSOLE_PORT=443`, `REVERSE_PROXY_AUTH_PORT=8443` in `.env`. Verified with
+curl from the VM:
+- `GET https://console.<domain>/auth` (via Caddy :443) redirects to
+  `https://console.<domain>:8443/auth` — the console uses the proxy settings;
+- `GET :8443/auth` with the admin user certificate (Caddy `require_and_verify`, forwards
+  the `Client-Cert` header) → 302 to `https://console.<domain>/tenant/1/site/1/dashboard`
+  with a session cookie, and the dashboard returns 200 through the proxy with that cookie;
+  the auth log records "user admin has logged in with a digital certificate";
+- `:8443` without a client certificate is rejected in the TLS handshake;
+- the direct ports are unaffected: `:1323` serves the console, agents keep reporting, and
+  `:1324` still accepts the `Client-Cert` header while proxy mode is on (keep 1324
+  unreachable from outside when a proxy is configured).
+Not repeated in a browser (the VM's proxy ports aren't forwarded to the host); the
+server-side chain is fully verified, and Chromium's client-certificate login on the direct
+port was verified in an earlier round.
 
 ### Fixed after testing on Windows
 
@@ -315,6 +335,8 @@ Asked whether the build is ready for a live system, this round did:
 - **The official agent's Debian package hangs in unattended installs**: its debconf `config` script loops `while [ -z "$nats_server" ]` around the prompt, so `DEBIAN_FRONTEND=noninteractive apt-get install` spins forever unless `openuem-agent/nats-server` is preseeded with `debconf-set-selections`.
 - **New organizations default to "default organization: Yes"** in the form, so creating one silently makes it the default for newly registered agents.
 - **Profile tasks re-run on installed packages** ("Run only once" aside); with the fork's install fix they now end as "already installed and up to date".
+- **The shipped reverse proxy is broken as delivered:** `caddy/Caddyfile` uses `//` comments, which Caddy doesn't support (comments are `#`), so `openuem-reverse-proxy` crash-loops with "Unexpected '}'" as soon as `compose.caddy.yml` is included; the commented block also references an unset `NATS_WEBSOCKETPORT`. Delete the commented block. Also, `certificates/console/proxy.cer`/`proxy.key` are not created by the cert-manager and must be issued for the console domain signed by the OpenUEM CA before Caddy can start. Verified working after fixing both (see section 4).
+- **curl/openssl don't complete certificate login on the auth port, browsers do:** `GET :1324/auth` with a client certificate sent by curl or openssl s_client is answered with "Please provide valid credentials" (the Go handler sees no peer certificate), on upstream `main` too. Chromium presents the certificate correctly, so use a browser for this test.
 
 ## 8. Testing without Windows (how the container tests were done)
 
