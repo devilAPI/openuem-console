@@ -188,11 +188,12 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 ```
 
 - **What it does:**
-  - adds hosts entries, but only rewrites them when they're wrong;
   - copies the certificates and the fork agent over one SSH connection;
   - installs the official agent 0.11.0 if missing;
   - replaces its binary, keeping the original as `.official`.
-- **Later runs need no parameters.** The settings come from the last run (`%ProgramData%\OpenUEM-fork\install-agent.json`), then from the installed agent's `config\openuem.ini`, the hosts file or DNS.
+  - No hosts entries are written: `console./nats./ocsp.<domain>` must resolve over DNS.
+  - `-Overwrite` rewrites the installed agent's config (NATS server, ports, and organization/site with `-OrgID`/`-SiteID`) with the settings of the run.
+- **Later runs need no parameters.** The settings come from the last run (`%ProgramData%\OpenUEM-fork\install-agent.json`), then from the installed agent's `config\openuem.ini` or DNS.
 - **Defender:** ASR rules on managed company PCs block the unsigned agent, so test on a computer without those policies.
 - **Key handling:** the work folder (`C:\openuem-agent`) is limited to administrators and SYSTEM, and the copied certificates, key and installers are deleted when the script ends, also when it fails. Earlier versions left `agent.key` there, readable by all users; running the new script removes it.
 
@@ -201,7 +202,8 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - **Built by the server script** in `agent-builds/latest/windows-amd64/` (NSIS in a `debian:trixie-slim` container). It bundles the official agent installer (`OFFICIAL_AGENT_VERSION`, default 0.11.0), the fork's agent, the certificates and `install-openuem-agent-fork.ps1`, and runs the script with `-FilesDir`, so no SSH and no internet access are needed on the computers.
 - **Always silent:** no window; `/S` or `/silent` can be passed but change nothing. Exit code 0 on success, 1 on failure. Runs as administrator or SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
 - **Install and update:** a computer without the agent gets the official agent plus the fork's binary; a computer with the agent gets the new binary.
-- **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`. Hosts entries are only written when DNS doesn't resolve the names (`-HostsIfUnresolved`). Set `SERVER_IP` when the server has more than one address.
+- **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`. Set `SERVER_IP` when the server has more than one address. No hosts entries are written; DNS must resolve the names.
+- **Options:** `/ORG=<id> /SITE=<id>` (organization and site of new computers), `/DOMAIN=` and `/SERVERIP=` override the baked-in settings, `/OVERWRITE` overwrites the installed agent's config with them.
 - **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
 - **Secret:** it contains the agents' private key, like the certificate files the official installer needs. The file is root-only (600) on the server; keep it on internal shares.
 - **Not an MSI:** GPO software installation needs an MSI, so use a startup script (`\\server\share\openuem-agent-fork-setup.exe`) instead.
@@ -209,7 +211,7 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 
 **Linux installer** (`install-openuem-agent-fork.sh`, built as `agent-builds/latest/linux/openuem-agent-fork-install.sh`):
 
-- **Self-contained:** the server script appends a tarball with the certificates, the amd64 and arm64 agents and `settings.env` (server IP, domain, ports, commit). Run it with `sudo bash openuem-agent-fork-install.sh [--org <id> --site <id>] [--domain …] [--server-ip …] [--nats-port …] [--skip-hosts]`.
+- **Self-contained:** the server script appends a tarball with the certificates, the amd64 and arm64 agents and `settings.env` (server IP, domain, ports, commit). Run it with `sudo bash openuem-agent-fork-install.sh [--org <id> --site <id>] [--domain …] [--nats-port …]` (DNS must resolve the names; no hosts entries are written).
 - **No official package needed:** it uses the official package's layout (`/opt/openuem-agent/bin`, `/etc/openuem-agent`, the `openuem-agent` service and group). If the official .deb, pacman or rpm package is installed, it replaces the binary (keeping `.official`), keeps the configuration and disables the official updater. This also avoids the .deb's debconf loop.
 - **Distributions:** any systemd distribution. The agent is a static Go binary, so the kernel version and the C library don't matter. Inventory and update status come from the upstream agent, which reads dpkg and rpm: on Arch only Flatpak and Snap apps are listed, and the update status is "unknown".
 - **Tested on the VMs (2026-11-19):**
@@ -217,10 +219,10 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
   - the same VM on `linux-lts` 6.18.64 after a reboot: the agent is running and connected;
   - Debian 13 on 6.12 LTS: took over an existing configuration;
   - `--org` without `--site` is refused;
-  - **takeover of an installed official .deb** (2026-11-19, `uemlegacy`, Debian 13, official `openuem-agent` 0.11.0 .deb, active agent and updater, own UUID): the installer exited 0, saved the official binary as `openuem-agent.official` (SHA-256 verified), installed the fork build (SHA-256 matches the server's `agent-builds`), kept the configuration (UUID, org/site untouched; only `NATSServers` was switched to the fork server), replaced the certificates with the server's, disabled and stopped `openuem-agent-updater`, added the hosts entries and left the service running. The computer appeared on the fork server as waiting for admission, was admitted in the console, shows as Enabled with inventory (Debian 13.7) and answers "Check for updates" (dpkg). A second run is an idempotent update: exit 0, the fork binary stays, `.official` is not overwritten (the message now says "is kept as" instead of "was saved as"). The package stays installed (`dpkg-query` still reports it), so a later `apt upgrade` would replace the binary again; re-running the installer restores the fork build.
+  - **takeover of an installed official .deb** (2026-11-19, `uemlegacy`, Debian 13, official `openuem-agent` 0.11.0 .deb, active agent and updater, own UUID): the installer exited 0, saved the official binary as `openuem-agent.official` (SHA-256 verified), installed the fork build (SHA-256 matches the server's `agent-builds`), kept the configuration (UUID, org/site untouched; only `NATSServers` was switched to the fork server), replaced the certificates with the server's, disabled and stopped `openuem-agent-updater` and left the service running (no hosts entries are written anymore; the VM already had them). The computer appeared on the fork server as waiting for admission, was admitted in the console, shows as Enabled with inventory (Debian 13.7) and answers "Check for updates" (dpkg). A second run is an idempotent update: exit 0, the fork binary stays, `.official` is not overwritten (the message now says "is kept as" instead of "was saved as"). The package stays installed (`dpkg-query` still reports it), so a later `apt upgrade` would replace the binary again; re-running the installer restores the fork build.
 - **Tested on the VMs (2026-11-19):**
   - update as SYSTEM (`/S`): exit code 0, binary replaced;
-  - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, hosts entries added, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;
+  - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;
   - failure (NATS not reachable): exit code 1 with the reason in the log;
   - afterwards `C:\openuem-agent` is empty and only administrators and SYSTEM have access, and the setup's temp folder is gone;
   - the server script piped from GitHub and run as a local file both build it.

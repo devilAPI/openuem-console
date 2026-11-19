@@ -17,10 +17,9 @@
 #                        address bar: .../tenant/<org id>/site/<site id>/... Only applies
 #                        when the computer registers for the first time; move existing
 #                        computers in the console (computer > Overview).
-#   --domain <domain>    OpenUEM domain (console.<domain>, nats.<domain>, ocsp.<domain>)
-#   --server-ip <ip>     server address for hosts entries when DNS doesn't resolve the names
+#   --domain <domain>    OpenUEM domain (console.<domain>, nats.<domain>, ocsp.<domain>),
+#                        must resolve over DNS; no hosts entries are written
 #   --nats-port <port>   NATS port (default: the server's)
-#   --skip-hosts         don't add hosts entries, even if DNS doesn't resolve the names
 #   --files-dir <dir>    take the files from a folder instead of the appended ones
 #
 # Example: sudo bash openuem-agent-fork-install.sh --org 2 --site 3
@@ -34,21 +33,17 @@
 
 set -euo pipefail
 
-SKIP_HOSTS=0
 FILES_DIR=""
 ORG_ID=""
 SITE_ID=""
 OPT_DOMAIN=""
-OPT_SERVER_IP=""
 OPT_NATS_PORT=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --skip-hosts) SKIP_HOSTS=1 ;;
         --files-dir) FILES_DIR="${2:-}"; shift ;;
         --org | --tenant) ORG_ID="${2:-}"; shift ;;
         --site) SITE_ID="${2:-}"; shift ;;
         --domain) OPT_DOMAIN="${2:-}"; shift ;;
-        --server-ip) OPT_SERVER_IP="${2:-}"; shift ;;
         --nats-port) OPT_NATS_PORT="${2:-}"; shift ;;
         -h | --help) sed -n '2,35p' "$0"; exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -90,7 +85,6 @@ done
 # shellcheck disable=SC1091
 . "$FILES_DIR/settings.env"
 [ -z "$OPT_DOMAIN" ] || DOMAIN="$OPT_DOMAIN"
-[ -z "$OPT_SERVER_IP" ] || SERVER_IP="$OPT_SERVER_IP"
 [ -z "$OPT_NATS_PORT" ] || NATS_PORT="$OPT_NATS_PORT"
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die "invalid domain: $DOMAIN"
 [[ "$SERVER_IP" =~ ^[0-9A-Fa-f:.]+$ ]] || die "invalid server IP: $SERVER_IP"
@@ -105,24 +99,10 @@ info "Settings"
 printf '    Server:  %s\n    Domain:  %s\n    NATS:    nats.%s:%s\n    Org:     %s\n    Build:   %s (%s)\n' \
     "$SERVER_IP" "$DOMAIN" "$DOMAIN" "$NATS_PORT" "$([ -n "$ORG_ID" ] && echo "org $ORG_ID, site $SITE_ID" || echo default)" "${AGENT_COMMIT:-unknown}" "$ARCH"
 
-# --- Hosts entries ------------------------------------------------------------
-NAMES="console.$DOMAIN nats.$DOMAIN ocsp.$DOMAIN"
-if [ "$SKIP_HOSTS" = "0" ]; then
-    added=""
-    for name in $NAMES; do
-        getent hosts "$name" >/dev/null && continue
-        printf '%s %s # openuem\n' "$SERVER_IP" "$name" >>/etc/hosts
-        added="$added $name"
-    done
-    if [ -n "$added" ]; then
-        info "DNS doesn't resolve$added, added them to /etc/hosts -> $SERVER_IP"
-        # systemd-resolved and nscd would keep answering "not found" for a while
-        resolvectl flush-caches >/dev/null 2>&1 || true
-        nscd -i hosts >/dev/null 2>&1 || true
-    fi
-fi
-
-info "Checking the connection to nats.$DOMAIN:$NATS_PORT"
+# --- Connection check -----------------------------------------------------------
+# console.<domain>, nats.<domain> and ocsp.<domain> must resolve over DNS; this script
+# does not write hosts entries
+info "Checking the connection to nats.$DOMAIN:$NATS_PORT (DNS must resolve it)"
 reachable=0
 for _ in 1 2 3; do
     if timeout 10 bash -c ": </dev/tcp/nats.$DOMAIN/$NATS_PORT" 2>/dev/null; then
@@ -132,7 +112,7 @@ for _ in 1 2 3; do
     sleep 3
 done
 [ "$reachable" = "1" ] ||
-    die "can't reach nats.$DOMAIN:$NATS_PORT. Check DNS / the hosts file, the firewall and that the server is running"
+    die "can't reach nats.$DOMAIN:$NATS_PORT. Check the DNS records for $DOMAIN, the firewall and that the server is running"
 
 # --- Agent --------------------------------------------------------------------
 AGENT_DIR=/opt/openuem-agent

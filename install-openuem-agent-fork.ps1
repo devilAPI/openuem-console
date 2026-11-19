@@ -3,10 +3,12 @@
     Installs the OpenUEM agent on Windows and replaces its binary with the one built from the fork.
 
 .DESCRIPTION
-    1. Adds console/nats/ocsp hosts entries for the OpenUEM server
-    2. Copies the certificates and the fork's agent from the server over SSH (one password prompt)
-    3. Downloads and silently installs the official OpenUEM agent
-    4. Replaces the agent binary with the fork's build
+    1. Copies the certificates and the fork's agent from the server over SSH (one password prompt)
+    2. Downloads and silently installs the official OpenUEM agent
+    3. Replaces the agent binary with the fork's build
+
+    The names console.<domain>, nats.<domain> and ocsp.<domain> must resolve over DNS;
+    no hosts entries are written.
 
     Run it again to update the agent to the latest build on the server.
 
@@ -16,8 +18,7 @@
     Settings that aren't given are taken, in this order, from:
       1. the last successful run on this computer (saved in
          %ProgramData%\OpenUEM-fork\install-agent.json)
-      2. the installed agent's config (domain and ports) and the hosts entries or DNS
-         (server IP)
+      2. the installed agent's config (domain and ports) and DNS (server IP)
       3. the defaults
     So on a computer that already has the agent, running the script without parameters
     updates it with the same settings.
@@ -31,6 +32,10 @@
 .EXAMPLE
     # Add a new computer to organization 2, site 3
     .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -OrgID 2 -SiteID 3
+
+.EXAMPLE
+    # Update and overwrite the installed agent's config with these settings
+    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -Overwrite
 
 .EXAMPLE
     # Update with the settings of the last run
@@ -56,10 +61,9 @@ param(
     [string]$WorkDir = "C:\openuem-agent",
     # Install only the official agent, without the fork's binary
     [switch]$OfficialOnly,
-    # Don't add hosts entries, e.g. when DNS already resolves the names
-    [switch]$SkipHosts,
-    # Add hosts entries only for names DNS doesn't resolve
-    [switch]$HostsIfUnresolved,
+    # Overwrite the installed agent's config (nats server, ports, and organization/site
+    # when -OrgID/-SiteID are given) with the settings of this run
+    [switch]$Overwrite,
     # Take the certificates, the fork's agent and the official setup from this folder
     # instead of copying them from the server over SSH (used by the setup program)
     [string]$FilesDir,
@@ -105,7 +109,7 @@ if ($Log) {
 # --- Settings -----------------------------------------------------------------
 # Settings that aren't given come from the last run, then from what is installed
 $configFile = Join-Path $env:ProgramData "OpenUEM-fork\install-agent.json"
-$rememberedSettings = "ServerIP", "Domain", "SshUser", "SshPort", "NatsPort", "SftpPort", "VncPort", "WorkDir", "SkipHosts"
+$rememberedSettings = "ServerIP", "Domain", "SshUser", "SshPort", "NatsPort", "SftpPort", "VncPort", "WorkDir"
 $settingSource = @{}
 foreach ($name in $rememberedSettings) {
     $settingSource[$name] = if ($PSBoundParameters.ContainsKey($name)) { "parameter" } else { "default" }
@@ -153,16 +157,7 @@ if ($Domain -match '^(console|nats|ocsp)\.(.+\..+)$') {
     $Domain = $Matches[2]
 }
 
-# 3. The server IP: the hosts entry of console.<domain> (written by this script), then DNS
-if (-not $ServerIP) {
-    $hostsPattern = if ($Domain) { '^\s*([0-9A-Fa-f:.]+)\s+console\.' + [regex]::Escape($Domain) + '(\s|$)' } else { '^\s*([0-9A-Fa-f:.]+)\s+console\.(\S+).*#\s*openuem' }
-    $hostsLine = Get-Content "$env:SystemRoot\System32\drivers\etc\hosts" -ErrorAction SilentlyContinue |
-        Where-Object { $_ -match $hostsPattern } | Select-Object -First 1
-    if ($hostsLine -and $hostsLine -match $hostsPattern) {
-        Use-Setting "ServerIP" $Matches[1] "hosts file"
-        if (-not $Domain) { Use-Setting "Domain" $Matches[2] "hosts file" }
-    }
-}
+# 3. The server IP from DNS (console.<domain>)
 if (-not $ServerIP -and $Domain) {
     try {
         $address = [System.Net.Dns]::GetHostAddresses("console.$Domain") |
@@ -196,69 +191,10 @@ foreach ($tool in $(if ($FilesDir) { @() } else { "ssh.exe", "tar.exe" })) {
     }
 }
 
-# --- Hosts entries ------------------------------------------------------------
-$names = "console", "nats", "ocsp" | ForEach-Object { "$_.$Domain" }
-$hostsNeeded = -not $SkipHosts
-if ($hostsNeeded -and $HostsIfUnresolved) {
-    # Names that DNS resolves (the hosts file not counted) don't need an entry
-    # A name that doesn't exist returns only the zone's SOA record, without an error
-    $unresolved = @($names | Where-Object {
-        -not (Resolve-DnsName $_ -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -eq "A" -or $_.Type -eq "AAAA" })
-    })
-    if ($unresolved.Count -eq 0) {
-        Write-Step "DNS resolves $($names -join ', '), no hosts entries needed"
-        $hostsNeeded = $false
-    }
-}
-if ($hostsNeeded) {
-    $hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
-    $current = @(Get-Content $hostsFile)
-
-    # Which addresses do the names have now? (comments ignored)
-    $mapped = @{}
-    foreach ($line in $current) {
-        $entry = @(($line -replace '#.*$', '').Trim() -split '\s+' | Where-Object { $_ })
-        for ($i = 1; $i -lt $entry.Count; $i++) {
-            if ($names -contains $entry[$i]) {
-                if (-not $mapped.ContainsKey($entry[$i])) { $mapped[$entry[$i]] = @() }
-                $mapped[$entry[$i]] += $entry[0]
-            }
-        }
-    }
-    $outdated = @($names | Where-Object { -not $mapped.ContainsKey($_) -or $mapped[$_].Count -ne 1 -or $mapped[$_][0] -ne $ServerIP })
-
-    if ($outdated.Count -eq 0) {
-        Write-Step "The hosts entries for $($names -join ', ') already point to $ServerIP"
-    } else {
-        Write-Step "Adding hosts entries for $($names -join ', ') -> $ServerIP"
-        $pattern = "\s(" + (($names | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")(\s|$)"
-        $newEntries = @($names | ForEach-Object { "$ServerIP $_ # openuem" })
-        $lines = @($current | Where-Object { $_ -notmatch $pattern }) + $newEntries
-        $text = ($lines -join "`r`n") + "`r`n"
-
-        $item = Get-Item $hostsFile
-        if ($item.IsReadOnly) { $item.IsReadOnly = $false }
-        # Antivirus software often has the hosts file open for a moment, so retry
-        for ($attempt = 1; ; $attempt++) {
-            try {
-                [System.IO.File]::WriteAllText($hostsFile, $text, [System.Text.Encoding]::ASCII)
-                break
-            } catch {
-                if ($attempt -ge 10) {
-                    throw "Could not write $hostsFile ($($_.Exception.Message)). An antivirus may be locking or protecting it. Add these lines yourself, then run the script again:`n$($newEntries -join "`n")"
-                }
-                Start-Sleep 1
-            }
-        }
-        ipconfig /flushdns | Out-Null
-    }
-}
-
 $natsServer = "nats.$Domain"
-Write-Step "Checking the connection to ${natsServer}:$NatsPort"
+Write-Step "Checking the connection to ${natsServer}:$NatsPort (DNS must resolve it)"
 if (-not (Test-NetConnection $natsServer -Port $NatsPort -InformationLevel Quiet -WarningAction SilentlyContinue)) {
-    throw "Can't reach ${natsServer}:$NatsPort. Check the hosts entries / DNS and that the server is running"
+    throw "Can't reach ${natsServer}:$NatsPort. Check the DNS records for $Domain and that the server is running"
 }
 
 # --- Files from the server ----------------------------------------------------
@@ -371,16 +307,24 @@ if (-not $OfficialOnly) {
 # The installer copied the certificates to the agent's folder
 Remove-CopiedFiles
 
-if ($OrgID) {
-    $iniFile = Join-Path (Split-Path $agentExe) "config\openuem.ini"
+$iniFile = Join-Path (Split-Path $agentExe) "config\openuem.ini"
+if ($OrgID -or $Overwrite) {
     if (-not (Test-Path $iniFile)) { throw "$iniFile was not found" }
-    Write-Step "Setting organization $OrgID, site $SiteID"
-    if ($wasInstalled) {
-        Write-Warning "This computer is already registered: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview)."
-    }
     Stop-Service openuem-agent -Force -ErrorAction SilentlyContinue
-    Set-IniValue $iniFile "Agent" "TenantID" $OrgID
-    Set-IniValue $iniFile "Agent" "SiteID" $SiteID
+    if ($OrgID) {
+        Write-Step "Setting organization $OrgID, site $SiteID"
+        if ($wasInstalled) {
+            Write-Warning "This computer is already registered: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview)."
+        }
+        Set-IniValue $iniFile "Agent" "TenantID" $OrgID
+        Set-IniValue $iniFile "Agent" "SiteID" $SiteID
+    }
+    if ($Overwrite) {
+        Write-Step "Overwriting $iniFile with the settings of this run"
+        Set-IniValue $iniFile "NATS" "NATSServers" "${natsServer}:$NatsPort"
+        Set-IniValue $iniFile "Agent" "SFTPPort" "$SftpPort"
+        Set-IniValue $iniFile "Agent" "VNCProxyPort" "$VncPort"
+    }
 }
 
 $startTime = Get-Date

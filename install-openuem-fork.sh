@@ -480,7 +480,8 @@ Section
     IfFileExists \$0 +2
         StrCpy \$0 "\$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
     ; Options: /ORG=<id> /SITE=<id> (organization and site of new computers),
-    ; /DOMAIN=<domain> and /SERVERIP=<ip> override the server's settings
+    ; /DOMAIN=<domain> and /SERVERIP=<ip> override the server's settings,
+    ; /OVERWRITE overwrites the installed agent's config with these settings
     \${GetParameters} \$R0
     StrCpy \$R1 "${SERVER_IP}"
     StrCpy \$R2 "${OPENUEM_DOMAIN}"
@@ -501,7 +502,11 @@ Section
     \${GetOptions} \$R0 "/SITE=" \$R3
     IfErrors +2
         StrCpy \$R5 '\$R5 -SiteID "\$R3"'
-    nsExec::Exec '"\$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\$PLUGINSDIR\files\install-openuem-agent-fork.ps1" -FilesDir "\$PLUGINSDIR\files" -ServerIP "\$R1" -Domain "\$R2" -NatsPort ${NATS_PORT} -SftpPort ${AGENT_SFTP_PORT} -VncPort ${AGENT_VNC_PORT} -HostsIfUnresolved -Log\$R5'
+    ClearErrors
+    \${GetOptions} \$R0 "/OVERWRITE" \$R3
+    IfErrors +2
+        StrCpy \$R5 '\$R5 -Overwrite'
+    nsExec::Exec '"\$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\$PLUGINSDIR\files\install-openuem-agent-fork.ps1" -FilesDir "\$PLUGINSDIR\files" -ServerIP "\$R1" -Domain "\$R2" -NatsPort ${NATS_PORT} -SftpPort ${AGENT_SFTP_PORT} -VncPort ${AGENT_VNC_PORT} -Log\$R5'
     Pop \$1
     StrCmp \$1 "0" +2
         StrCpy \$1 1
@@ -652,7 +657,9 @@ Agent binaries built from the fork: ${INSTALL_DIR}/agent-builds/latest/
     It contains the agents' private key: keep it internal. Run it as administrator
     or SYSTEM (GPO startup script, Intune Win32 app, PDQ, ...), exit code 0 = OK.
     Log: %ProgramData%\OpenUEM-fork\install-agent.log on the computer.
-    Hosts entries for ${SERVER_IP} are added only if DNS doesn't resolve the names.
+    Options: /ORG=<id> /SITE=<id>, /DOMAIN=, /SERVERIP=, /OVERWRITE (overwrites the
+    installed agent's config). DNS must resolve console/nats/ocsp.<domain>; no hosts
+    entries are written.
 
   Linux installer (Debian/Ubuntu, Arch and other systemd distributions, amd64
   and arm64; installs or updates, also over the official package):
