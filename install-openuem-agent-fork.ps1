@@ -10,6 +10,9 @@
 
     Run it again to update the agent to the latest build on the server.
 
+    openuem-agent-fork-setup.exe, built by install-openuem-fork.sh, contains this script,
+    the certificates and both agents and runs it with -FilesDir, without SSH.
+
     Settings that aren't given are taken, in this order, from:
       1. the last successful run on this computer (saved in
          %ProgramData%\OpenUEM-fork\install-agent.json)
@@ -50,13 +53,26 @@ param(
     # Install only the official agent, without the fork's binary
     [switch]$OfficialOnly,
     # Don't add hosts entries, e.g. when DNS already resolves the names
-    [switch]$SkipHosts
+    [switch]$SkipHosts,
+    # Add hosts entries only for names DNS doesn't resolve
+    [switch]$HostsIfUnresolved,
+    # Take the certificates, the fork's agent and the official setup from this folder
+    # instead of copying them from the server over SSH (used by the setup program)
+    [string]$FilesDir,
+    # Write the output to %ProgramData%\OpenUEM-fork\install-agent.log
+    [switch]$Log
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 function Write-Step($message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
+
+if ($Log) {
+    $logFile = Join-Path $env:ProgramData "OpenUEM-fork\install-agent.log"
+    New-Item -ItemType Directory -Force -Path (Split-Path $logFile) | Out-Null
+    Start-Transcript -Path $logFile -Force | Out-Null
+}
 
 # --- Settings -----------------------------------------------------------------
 # Settings that aren't given come from the last run, then from what is installed
@@ -141,7 +157,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Run this script in PowerShell as administrator"
 }
-foreach ($tool in "ssh.exe", "tar.exe") {
+foreach ($tool in $(if ($FilesDir) { @() } else { "ssh.exe", "tar.exe" })) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
         throw "$tool was not found. Install the 'OpenSSH Client' optional feature (Settings > Apps > Optional features)"
     }
@@ -149,6 +165,14 @@ foreach ($tool in "ssh.exe", "tar.exe") {
 
 # --- Hosts entries ------------------------------------------------------------
 $names = "console", "nats", "ocsp" | ForEach-Object { "$_.$Domain" }
+if (-not $SkipHosts -and $HostsIfUnresolved) {
+    # Names that DNS resolves (the hosts file not counted) don't need an entry
+    $unresolved = @($names | Where-Object { -not (Resolve-DnsName $_ -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction SilentlyContinue) })
+    if ($unresolved.Count -eq 0) {
+        Write-Step "DNS resolves $($names -join ', '), no hosts entries needed"
+        $SkipHosts = $true
+    }
+}
 if (-not $SkipHosts) {
     $hostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
     $current = @(Get-Content $hostsFile)
@@ -200,9 +224,19 @@ if (-not (Test-NetConnection $natsServer -Port $NatsPort -InformationLevel Quiet
 }
 
 # --- Files from the server ----------------------------------------------------
-Write-Step "Copying certificates and the fork's agent from $SshUser@${ServerIP}:$SshPort (enter the SSH password)"
+# The folder gets the agents' private key: only administrators and SYSTEM may read it,
+# and the copies are deleted when the script ends
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+icacls.exe $WorkDir /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not restrict the permissions of $WorkDir" }
 Set-Location $WorkDir
+function Remove-CopiedFiles {
+    foreach ($name in "ca.cer", "agent.cer", "agent.key", "sftp.cer", "openuem-agent.exe", "openuem-agent-setup.exe", "openuem-files.tar") {
+        Remove-Item (Join-Path $WorkDir $name) -Force -ErrorAction SilentlyContinue
+    }
+}
+# Also when the script fails (a trap applies to the whole script, also before this line)
+trap { if (Get-Command Remove-CopiedFiles -ErrorAction SilentlyContinue) { Remove-CopiedFiles }; break }
 
 $remoteFiles = @(
     "certificates/ca/ca.cer",
@@ -212,25 +246,36 @@ $remoteFiles = @(
 )
 if (-not $OfficialOnly) { $remoteFiles += "agent-builds/latest/windows-amd64/openuem-agent.exe" }
 
-# One SSH connection: the server packs the files with tar. Start-Process writes the
-# binary output to the file unchanged (PowerShell 5.1's redirection would corrupt it).
-# A cmd.exe redirection hangs on larger output when the script itself runs without a
-# console (over SSH or a remote management tool). ssh still asks for the password on
-# the console.
-$tarFile = Join-Path $WorkDir "openuem-files.tar"
-$remoteCmd = "tar -C /opt/openuem -chf - " + ($remoteFiles -join " ")
-$ssh = Start-Process -FilePath "ssh.exe" -ArgumentList "-p $SshPort $SshUser@$ServerIP `"$remoteCmd`"" `
-    -RedirectStandardOutput $tarFile -NoNewWindow -Wait -PassThru
-if ($ssh.ExitCode -ne 0) { throw "Copying the files from the server failed (ssh exit code $($ssh.ExitCode))" }
-tar.exe -xf $tarFile -C $WorkDir
-if ($LASTEXITCODE -ne 0) { throw "Could not extract $tarFile" }
-Remove-Item $tarFile
+if ($FilesDir) {
+    Write-Step "Copying certificates and the fork's agent from $FilesDir"
+    foreach ($file in $remoteFiles) {
+        $source = Join-Path $FilesDir (Split-Path $file -Leaf)
+        if (-not (Test-Path $source)) { throw "$source is missing" }
+        Copy-Item $source $WorkDir -Force
+    }
+} else {
+    Write-Step "Copying certificates and the fork's agent from $SshUser@${ServerIP}:$SshPort (enter the SSH password)"
 
-# The installer looks for the certificates next to it
-foreach ($file in $remoteFiles) {
-    Copy-Item (Join-Path $WorkDir $file) $WorkDir -Force
+    # One SSH connection: the server packs the files with tar. Start-Process writes the
+    # binary output to the file unchanged (PowerShell 5.1's redirection would corrupt it).
+    # A cmd.exe redirection hangs on larger output when the script itself runs without a
+    # console (over SSH or a remote management tool). ssh still asks for the password on
+    # the console.
+    $tarFile = Join-Path $WorkDir "openuem-files.tar"
+    $remoteCmd = "tar -C /opt/openuem -chf - " + ($remoteFiles -join " ")
+    $ssh = Start-Process -FilePath "ssh.exe" -ArgumentList "-p $SshPort $SshUser@$ServerIP `"$remoteCmd`"" `
+        -RedirectStandardOutput $tarFile -NoNewWindow -Wait -PassThru
+    if ($ssh.ExitCode -ne 0) { throw "Copying the files from the server failed (ssh exit code $($ssh.ExitCode))" }
+    tar.exe -xf $tarFile -C $WorkDir
+    if ($LASTEXITCODE -ne 0) { throw "Could not extract $tarFile" }
+    Remove-Item $tarFile
+
+    # The installer looks for the certificates next to it
+    foreach ($file in $remoteFiles) {
+        Copy-Item (Join-Path $WorkDir $file) $WorkDir -Force
+    }
+    Remove-Item (Join-Path $WorkDir "certificates"), (Join-Path $WorkDir "agent-builds") -Recurse -Force -ErrorAction SilentlyContinue
 }
-Remove-Item (Join-Path $WorkDir "certificates"), (Join-Path $WorkDir "agent-builds") -Recurse -Force -ErrorAction SilentlyContinue
 
 # The settings work: remember them for the next run
 $config = [ordered]@{}
@@ -249,8 +294,13 @@ if ($service) {
     Write-Step "The OpenUEM agent is already installed, updating it to the latest build on the server"
 } else {
     $setup = Join-Path $WorkDir "openuem-agent-setup.exe"
-    Write-Step "Downloading the official OpenUEM agent $AgentVersion"
-    Invoke-WebRequest "https://downloads.openuem.eu/agents/$AgentVersion/windows/amd64/openuem-agent-setup.exe" -OutFile $setup -UseBasicParsing
+    $bundledSetup = if ($FilesDir) { Join-Path $FilesDir "openuem-agent-setup.exe" }
+    if ($bundledSetup -and (Test-Path $bundledSetup)) {
+        Copy-Item $bundledSetup $setup -Force
+    } else {
+        Write-Step "Downloading the official OpenUEM agent $AgentVersion"
+        Invoke-WebRequest "https://downloads.openuem.eu/agents/$AgentVersion/windows/amd64/openuem-agent-setup.exe" -OutFile $setup -UseBasicParsing
+    }
 
     Write-Step "Installing the official OpenUEM agent"
     $arguments = "/server=${natsServer}:$NatsPort /sftp=$SftpPort /vnc=$VncPort /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
@@ -276,6 +326,8 @@ if (-not $OfficialOnly) {
     if (-not (Test-Path "$agentExe.official")) { Copy-Item $agentExe "$agentExe.official" }
     Copy-Item (Join-Path $WorkDir "openuem-agent.exe") $agentExe -Force
 }
+# The installer copied the certificates to the agent's folder
+Remove-CopiedFiles
 
 $startTime = Get-Date
 try {

@@ -194,6 +194,17 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
   - replaces its binary, keeping the original as `.official`.
 - **Later runs need no parameters.** The settings come from the last run (`%ProgramData%\OpenUEM-fork\install-agent.json`), then from the installed agent's `config\openuem.ini`, the hosts file or DNS.
 - **Defender:** ASR rules on managed company PCs block the unsigned agent, so test on a computer without those policies.
+- **Key handling:** the work folder (`C:\openuem-agent`) is limited to administrators and SYSTEM, and the copied certificates, key and installers are deleted when the script ends, also when it fails. Earlier versions left `agent.key` there, readable by all users; running the new script removes it.
+
+**Windows setup program for rollouts** (`openuem-agent-fork-setup.exe`):
+
+- **Built by the server script** in `agent-builds/latest/windows-amd64/` (NSIS in a `debian:trixie-slim` container). It bundles the official agent installer (`OFFICIAL_AGENT_VERSION`, default 0.11.0), the fork's agent, the certificates and `install-openuem-agent-fork.ps1`, and runs the script with `-FilesDir`, so no SSH and no internet access are needed on the computers.
+- **Always silent:** no window; `/S` or `/silent` can be passed but change nothing. Exit code 0 on success, 1 on failure. Runs as administrator or SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
+- **Install and update:** a computer without the agent gets the official agent plus the fork's binary; a computer with the agent gets the new binary.
+- **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`. Hosts entries are only written when DNS doesn't resolve the names (`-HostsIfUnresolved`). Set `SERVER_IP` when the server has more than one address.
+- **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
+- **Secret:** it contains the agents' private key, like the certificate files the official installer needs. The file is root-only (600) on the server; keep it on internal shares.
+- **Not an MSI:** GPO software installation needs an MSI, so use a startup script (`\\server\share\openuem-agent-fork-setup.exe`) instead.
 
 ## 4. Status
 
