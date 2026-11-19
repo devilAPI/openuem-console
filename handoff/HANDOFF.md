@@ -187,40 +187,114 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1))) -ServerIP <ip> -Domain <domain> [-P <ssh port>]
 ```
 
-- **What it does:**
-  - copies the certificates and the fork agent over one SSH connection;
-  - installs the official agent 0.11.0 if missing;
-  - replaces its binary, keeping the original as `.official`.
+- **Official flow** (https://openuem.eu/docs/Installation/Agent/windows), then only the binary swap:
+  - copies the certificates and the fork agent over one SSH connection (or takes them from `-FilesDir`);
+  - runs the **official** `openuem-agent-setup.exe` as admin with the official flags
+    `/server=<nats-host>:<port> /sftp=<port> /vnc=<port> /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`,
+    the certificates next to the installer and also via `/cacert= /cert= /key= /sftpcert=`,
+    plus `/tenantid=<id> /siteid=<id>` when `-OrgID`/`-SiteID` are given;
+  - replaces the installed agent binary, keeping the original as `.official`.
+  - **Also on updates** the official installer is run again (verified on the VM: a re-run
+    exits 0, keeps UUID/TenantID/SiteID/ports in `config\openuem.ini` and only replaces the
+    binary), then the fork binary is swapped in again.
   - No hosts entries are written: `console./nats./ocsp.<domain>` must resolve over DNS.
-  - `-Overwrite` rewrites the installed agent's config (NATS server, ports, and organization/site with `-OrgID`/`-SiteID`) with the settings of the run.
+  - `-Overwrite` rewrites the installed agent's config (NATS server, ports) with the settings of the run.
 - **Later runs need no parameters.** The settings come from the last run (`%ProgramData%\OpenUEM-fork\install-agent.json`), then from the installed agent's `config\openuem.ini` or DNS.
 - **Defender:** ASR rules on managed company PCs block the unsigned agent, so test on a computer without those policies.
 - **Key handling:** the work folder (`C:\openuem-agent`) is limited to administrators and SYSTEM, and the copied certificates, key and installers are deleted when the script ends, also when it fails. Earlier versions left `agent.key` there, readable by all users; running the new script removes it.
 
 **Windows setup program for rollouts** (`openuem-agent-fork-setup.exe`):
 
-- **Built by the server script** in `agent-builds/latest/windows-amd64/` (NSIS in a `debian:trixie-slim` container). It bundles the official agent installer (`OFFICIAL_AGENT_VERSION`, default 0.11.0), the fork's agent, the certificates and `install-openuem-agent-fork.ps1`, and runs the script with `-FilesDir`, so no SSH and no internet access are needed on the computers.
-- **Always silent:** no window; `/S` or `/silent` can be passed but change nothing. Exit code 0 on success, 1 on failure. Runs as administrator or SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
-- **Install and update:** a computer without the agent gets the official agent plus the fork's binary; a computer with the agent gets the new binary.
-- **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`. Set `SERVER_IP` when the server has more than one address. No hosts entries are written; DNS must resolve the names.
-- **Options:** `/ORG=<id> /SITE=<id>` (organization and site of new computers), `/DOMAIN=` and `/SERVERIP=` override the baked-in settings, `/OVERWRITE` overwrites the installed agent's config with them.
+- **Built with Inno Setup 6.6.1 like the official installer** (ISCC in a `debian:trixie-slim`
+  container with wine/xvfb; image cached as `openuem-fork-innosetup:6.6.1`). The built exe
+  carries the same packager signatures as the official `openuem-agent-setup.exe`
+  (`Inno Setup Setup Data (6.6.1)` / `Inno Setup Messages (6.5.0)`) and is detected as
+  `inno` by the console's own `wingetrepo.ReadExeInfo` detector (verified with a Go probe
+  against the built exe).
+- It bundles the official agent installer (`OFFICIAL_AGENT_VERSION`, default 0.11.0), the
+  fork's agent, the certificates and `install-openuem-agent-fork.ps1`; the `.iss` extracts
+  them to `{tmp}` and runs the script with `-FilesDir`, so no SSH and no internet access are
+  needed on the computers. Internally the script runs the official setup with the official
+  flags (see above) and then swaps the binary.
+- **Always silent:** started without `/VERYSILENT` it re-launches itself with
+  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` and exits with the child's exit code
+  (`ExitProcess`); in the silent run the worker's code is returned via
+  `GetCustomSetupExitCode`. Exit code 0 on success, 1 on failure. Runs as administrator or
+  SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
+- **Install and update:** a computer without the agent gets the official agent plus the
+  fork's binary; a computer with the agent gets the official installer re-run plus the new binary.
+- **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`.
+  No hosts entries are written; DNS must resolve the names.
+- **Options:** `/ORG=<id> /SITE=<id>` (organization and site of new computers, passed to the
+  script as `-OrgID`/`-SiteID` and to the official installer as `/tenantid=`/`/siteid=`),
+  `/DOMAIN=` and `/SERVERIP=` override the baked-in settings, `/OVERWRITE` overwrites the
+  installed agent's config with them.
 - **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
-- **Secret:** it contains the agents' private key, like the certificate files the official installer needs. The file is root-only (600) on the server; keep it on internal shares.
+- **Secret:** it contains the agents' private key, like the certificate files the official
+  installer needs. The file is root-only (600) on the server; keep it on internal shares.
 - **Not an MSI:** GPO software installation needs an MSI, so use a startup script (`\\server\share\openuem-agent-fork-setup.exe`) instead.
-- **Organization and site:** `/ORG=<id> /SITE=<id>` (both, numeric; the IDs are in the console's address bar `/tenant/<org>/site/<site>/`). `/DOMAIN=` and `/SERVERIP=` override the built-in settings. The script stops the official agent right after its setup, before its first report, and writes `TenantID`/`SiteID` into `config\openuem.ini`. The worker only uses them when a computer registers; it rejects reports with an invalid pair. Tested: a fresh install with `/ORG=2 /SITE=2` landed in site 2, and `/ORG` alone fails with exit code 1.
 
 **Linux installer** (`install-openuem-agent-fork.sh`, built as `agent-builds/latest/linux/openuem-agent-fork-install.sh`):
 
-- **Self-contained:** the server script appends a tarball with the certificates, the amd64 and arm64 agents and `settings.env` (server IP, domain, ports, commit). Run it with `sudo bash openuem-agent-fork-install.sh [--org <id> --site <id>] [--domain …] [--nats-port …]` (DNS must resolve the names; no hosts entries are written).
-- **No official package needed:** it uses the official package's layout (`/opt/openuem-agent/bin`, `/etc/openuem-agent`, the `openuem-agent` service and group). If the official .deb, pacman or rpm package is installed, it replaces the binary (keeping `.official`), keeps the configuration and disables the official updater. This also avoids the .deb's debconf loop.
-- **Distributions:** any systemd distribution. The agent is a static Go binary, so the kernel version and the C library don't matter. Inventory and update status come from the upstream agent, which reads dpkg and rpm: on Arch only Flatpak and Snap apps are listed, and the update status is "unknown".
-- **Tested on the VMs (2026-11-19):**
+- **Official flow** (https://openuem.eu/docs/Installation/Agent/linux), then only the binary swap:
+  - **Package:** debconf preseed (`openuem-agent/nats-server`, `/sftp-port`, `/vnc-proxy-port`,
+    `/org`, `/site`) + `apt install` of the bundled official `.deb`, or `apt install openuem-agent`
+    from the OpenUEM repository when no .deb is bundled; `dnf install openuem-agent` from the
+    RPM repository on dnf systems; on distributions without apt/dnf (e.g. Arch) the bundled
+    official `.deb` is extracted (`dpkg-deb`/`bsdtar`/`ar`), which installs the official layout
+    (`/opt/openuem-agent/bin`, `/etc/systemd/system` units).
+  - **Config:** the package's own mechanism — debconf on apt systems, otherwise
+    `/etc/openuem-agent/openuem.ini` (`[NATS] NATSServers=`, `SFTPPort`, `VNCProxyPort`,
+    `TenantID`, `SiteID`). An existing ini (UUID, org/site, console changes) is kept; only
+    `NATSServers` is rewritten.
+  - **Certificates** into `/etc/openuem-agent/certificates/` (ca.cer, sftp.cer, agent.cer,
+    agent.key) with the package's ownership/permissions, then `systemctl restart openuem-agent`.
+  - **Fork only:** the official updater `openuem-agent-updater` is disabled (`disable --now`,
+    on apt systems additionally `apt-mark hold openuem-agent` so `apt upgrade` doesn't replace
+    the fork binary), and `/opt/openuem-agent/bin/openuem-agent` is replaced with the fork build
+    (official kept as `openuem-agent.official`).
+- **Self-contained:** the server script appends a tarball with the certificates, the amd64 and
+  arm64 agents, the official .deb packages (amd64/arm64) and `settings.env` (server IP, domain,
+  ports, commit, `OFFICIAL_AGENT_VERSION`). Run it with
+  `sudo bash openuem-agent-fork-install.sh [--org <id> --site <id>] [--domain …] [--nats-port …] [--server-ip …] [--files-dir …]`
+  (DNS must resolve the names; no hosts entries are written).
+- **Distributions:** any systemd distribution. The agent is a static Go binary, so the kernel
+  version and the C library don't matter. Inventory and update status come from the upstream
+  agent, which reads dpkg and rpm: on Arch only Flatpak and Snap apps are listed, and the
+  update status is "unknown".
+- **Tested on the VMs (2026-11-19, old custom flow, kept for history):** see the two blocks below.
+- **Tested on the VMs (2026-11-19, rework to the official flow):**
+  - **Windows, official setup re-run:** running the official `openuem-agent-setup.exe` again on an
+    installed agent exits 0, keeps UUID/TenantID/SiteID/ports in `config\openuem.ini` and only
+    replaces the binary — so the fork installer can always run the official setup and swap after.
+  - **Windows fork setup (Inno build), update as SYSTEM:** `openuem-agent-fork-setup.exe /OVERWRITE`
+    → exit code 0, official installer re-run with the official flags, fork binary swapped
+    (`.official` kept), `config\openuem.ini` rewritten by `-Overwrite`, service running, log at
+    `%ProgramData%\OpenUEM-fork\install-agent.log`, `C:\openuem-agent` empty afterwards. Also with
+    explicit `/VERYSILENT /SUPPRESSMSGBOXES` → exit 0. Without any silent switch → the worker runs
+    in `InitializeSetup` (no UI) → exit 0. (First attempts with a self re-launch failed: Inno's
+    AppId setup mutex blocks the child; and `ExtractTemporaryFile` needs base names, not `files\…`.)
+  - **Inno detection:** the built `openuem-agent-fork-setup.exe` carries `Inno Setup Setup Data
+    (6.6.1)` / `Inno Setup Messages (6.5.0)` (same as the official 0.11.0 setup) and
+    `wingetrepo.ReadExeInfo` reports `type=inno`, name "OpenUEM Agent (fork)".
+  - **ISCC pipeline:** `debian:trixie-slim` + wine (win32 prefix) + xvfb/xauth + Inno Setup 6.6.1
+    from `github.com/jrsoftware/issrc/releases/download/is-6_6_1/…` (files.jrsoftware.org 404s
+    since March 2026); `xvfb-run -a wine innosetup-6.6.1.exe /VERYSILENT …` installs it;
+    ISCC.exe is found under `C:\Program Files\Inno Setup 6` in a win32 prefix.
+  - **Linux on Arch (no apt/dnf):** `sudo bash openuem-agent-fork-install.sh` → exit 0; the bundled
+    official `.deb` is extracted (`ar p … data.tar.xz | tar -x` — plain `bsdtar -xf` on a .deb only
+    extracts the ar members), installing the **official** `openuem-agent.service`/`openuem-agent-updater.service`
+    and `/opt/openuem-agent/bin/*`; updater unit present but `disabled`/`inactive`; fork binary
+    installed, old one kept as `openuem-agent.official`; certs in `/etc/openuem-agent/certificates/`
+    (openuem-agent:openuem-agent); existing `openuem.ini` kept (UUID, TenantID/SiteID), only
+    `NATSServers` rewritten; service active; no hosts entries written; no stray ar members in `/`.
+- **Tested on the VMs (2026-11-19, old custom flow):**
   - Arch Linux on mainline kernel 7.3.4: a fresh install with `--org 2 --site 2` landed in site 2, then an update;
   - the same VM on `linux-lts` 6.18.64 after a reboot: the agent is running and connected;
   - Debian 13 on 6.12 LTS: took over an existing configuration;
   - `--org` without `--site` is refused;
-  - **takeover of an installed official .deb** (2026-11-19, `uemlegacy`, Debian 13, official `openuem-agent` 0.11.0 .deb, active agent and updater, own UUID): the installer exited 0, saved the official binary as `openuem-agent.official` (SHA-256 verified), installed the fork build (SHA-256 matches the server's `agent-builds`), kept the configuration (UUID, org/site untouched; only `NATSServers` was switched to the fork server), replaced the certificates with the server's, disabled and stopped `openuem-agent-updater` and left the service running (no hosts entries are written anymore; the VM already had them). The computer appeared on the fork server as waiting for admission, was admitted in the console, shows as Enabled with inventory (Debian 13.7) and answers "Check for updates" (dpkg). A second run is an idempotent update: exit 0, the fork binary stays, `.official` is not overwritten (the message now says "is kept as" instead of "was saved as"). The package stays installed (`dpkg-query` still reports it), so a later `apt upgrade` would replace the binary again; re-running the installer restores the fork build.
-- **Tested on the VMs (2026-11-19):**
+  - **takeover of an installed official .deb** (2026-11-19, `uemlegacy`, Debian 13, official `openuem-agent` 0.11.0 .deb, active agent and updater, own UUID): the installer exited 0, saved the official binary as `openuem-agent.official` (SHA-256 verified), installed the fork build (SHA-256 matches the server's `agent-builds`), kept the configuration (UUID, org/site untouched; only `NATSServers` was switched to the fork server), replaced the certificates with the server's, disabled and stopped `openuem-agent-updater` and left the service running (no hosts entries are written anymore; the VM already had them). The computer appeared on the fork server as waiting for admission, was admitted in the console, shows as Enabled with inventory (Debian 13.7) and answers "Check for updates" (dpkg). A second run is an idempotent update: exit 0, the fork binary stays, `.official` is not overwritten (the message now says "is kept as" instead of "was saved as"). The package stays installed (`dpkg-query` still reports it), so a later `apt upgrade` would replace the binary again; re-running the installer restores the fork build. (In the rework the package is additionally put on `apt-mark hold`.)
+- **Tested on the VMs (2026-11-19, old NSIS setup, kept for history):**
   - update as SYSTEM (`/S`): exit code 0, binary replaced;
   - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;
   - failure (NATS not reachable): exit code 1 with the reason in the log;
