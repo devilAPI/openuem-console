@@ -594,21 +594,29 @@ begin
 end;
 
 // Always silent, even when started without /VERYSILENT: re-launch this setup with
-// /VERYSILENT and exit this instance with the child's exit code
+// /VERYSILENT and exit this instance with the child's exit code. The child gets the
+// directory of this exe as working dir (not the protected {tmp}) and no inherited /LOG=
+// (the parent holds that file open).
 function InitializeSetup: Boolean;
 var
   i, r: Integer;
-  params: string;
+  s, params: string;
 begin
   Result := True;
   if not WizardSilent then
   begin
     params := '';
     for i := 1 to ParamCount do
-      params := params + ' ' + ParamStr(i);
+    begin
+      s := ParamStr(i);
+      if (Length(s) > 5) and (CompareText(Copy(s, 1, 5), '/LOG=') = 0) then
+        // skip: the child must not fight over the parent's log file
+      else
+        params := params + ' ' + s;
+    end;
     Log('Not silent, re-running with /VERYSILENT:' + params);
     if Exec(ExpandConstant('{srcexe}'), params + ' /VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
-            ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, r) then
+            ExtractFilePath(ExpandConstant('{srcexe}')), SW_HIDE, ewWaitUntilTerminated, r) then
       ExitProcess(r)
     else
       ExitProcess(1);
