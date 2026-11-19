@@ -1,19 +1,29 @@
 <#
 .SYNOPSIS
-    Installs the OpenUEM agent on Windows and replaces its binary with the one built from the fork.
+    Installs the OpenUEM agent on Windows exactly like the official docs and then
+    replaces its binary with the one built from the fork.
 
 .DESCRIPTION
-    1. Copies the certificates and the fork's agent from the server over SSH (one password prompt)
-    2. Downloads and silently installs the official OpenUEM agent
-    3. Replaces the agent binary with the fork's build
+    The installation is the official one (https://openuem.eu/docs/Installation/Agent/windows):
+    1. The certificates (ca.cer, agent.cer, agent.key, sftp.cer) and the fork's agent are
+       copied from the server over SSH (one password prompt), or taken from -FilesDir
+    2. The official openuem-agent-setup.exe is run as administrator with the official
+       flags: /server=<nats-host>:<port> /sftp=<port> /vnc=<port> /VERYSILENT
+       (optionally /tenantid=<id> /siteid=<id>), with the certificates next to the
+       installer (also passed via /cacert= /cert= /key= /sftpcert=)
+    3. The installed agent binary is replaced with the fork's build, the official one is
+       kept as <binary>.official
+
+    It is run again on an already installed computer to update the fork's agent: the
+    official installer is run again (it keeps the existing config, UUID, organization
+    and site) and then the binary is swapped again.
 
     The names console.<domain>, nats.<domain> and ocsp.<domain> must resolve over DNS;
     no hosts entries are written.
 
-    Run it again to update the agent to the latest build on the server.
-
-    openuem-agent-fork-setup.exe, built by install-openuem-fork.sh, contains this script,
-    the certificates and both agents and runs it with -FilesDir, without SSH.
+    openuem-agent-fork-setup.exe, built by install-openuem-fork.sh (Inno Setup, like the
+    official installer), contains this script, the certificates, the official installer
+    and both agents and runs it with -FilesDir, without SSH.
 
     Settings that aren't given are taken, in this order, from:
       1. the last successful run on this computer (saved in
@@ -261,33 +271,45 @@ foreach ($name in $rememberedSettings) {
 New-Item -ItemType Directory -Force -Path (Split-Path $configFile) | Out-Null
 $config | ConvertTo-Json | Set-Content -Path $configFile -Encoding UTF8
 
-# --- Official agent -----------------------------------------------------------
+# --- Official agent (the official installer, the official flags) ---------------
+# https://openuem.eu/docs/Installation/Agent/windows: download openuem-agent-setup.exe,
+# put ca.cer, sftp.cer, agent.cer and agent.key next to it (or pass /cacert= /cert=
+# /key= /sftpcert=), then run as administrator:
+#   openuem-agent-setup.exe /server=<nats-host>:<port> /sftp=<port> /vnc=<port> /VERYSILENT
+#   (optionally /tenantid=<id> /siteid=<id>)
 $service = Get-Service openuem-agent -ErrorAction SilentlyContinue
 $wasInstalled = [bool]$service
 if ($service) {
-    Write-Step "The OpenUEM agent is already installed, updating it to the latest build on the server"
+    Write-Step "The OpenUEM agent is already installed, running the official installer again to update it (it keeps the existing config)"
 } else {
-    $setup = Join-Path $WorkDir "openuem-agent-setup.exe"
-    $bundledSetup = if ($FilesDir) { Join-Path $FilesDir "openuem-agent-setup.exe" }
-    if ($bundledSetup -and (Test-Path $bundledSetup)) {
-        Copy-Item $bundledSetup $setup -Force
-    } else {
-        Write-Step "Downloading the official OpenUEM agent $AgentVersion"
-        Invoke-WebRequest "https://downloads.openuem.eu/agents/$AgentVersion/windows/amd64/openuem-agent-setup.exe" -OutFile $setup -UseBasicParsing
-    }
-
     Write-Step "Installing the official OpenUEM agent"
-    $arguments = "/server=${natsServer}:$NatsPort /sftp=$SftpPort /vnc=$VncPort /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
-    $process = Start-Process $setup -ArgumentList $arguments -WorkingDirectory $WorkDir -Wait -PassThru
-    if ($process.ExitCode -ne 0) { throw "The installer failed with exit code $($process.ExitCode)" }
-
-    for ($i = 0; $i -lt 60 -and -not (Get-Service openuem-agent -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
-    if (-not (Get-Service openuem-agent -ErrorAction SilentlyContinue)) { throw "The openuem-agent service was not created" }
-    # Stop the official agent before its first report: the organization and the fork's
-    # binary must be in place when the computer registers
-    try { Stop-Service openuem-agent -Force -ErrorAction Stop } catch { }
-    Get-Process -Name openuem-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
+
+$setup = Join-Path $WorkDir "openuem-agent-setup.exe"
+$bundledSetup = if ($FilesDir) { Join-Path $FilesDir "openuem-agent-setup.exe" }
+if ($bundledSetup -and (Test-Path $bundledSetup)) {
+    Write-Step "Using the bundled official OpenUEM agent installer $AgentVersion"
+    Copy-Item $bundledSetup $setup -Force
+} else {
+    Write-Step "Downloading the official OpenUEM agent installer $AgentVersion"
+    Invoke-WebRequest "https://downloads.openuem.eu/agents/$AgentVersion/windows/amd64/openuem-agent-setup.exe" -OutFile $setup -UseBasicParsing
+}
+
+Write-Step "Running the official installer with /server=${natsServer}:$NatsPort /sftp=$SftpPort /vnc=$VncPort /VERYSILENT"
+# The certificates lie next to the installer (they were copied to $WorkDir above) and are
+# also passed explicitly with the official flags
+$arguments = "/server=${natsServer}:$NatsPort /sftp=$SftpPort /vnc=$VncPort /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+$arguments += " /cacert=`"$WorkDir\ca.cer`" /cert=`"$WorkDir\agent.cer`" /key=`"$WorkDir\agent.key`" /sftpcert=`"$WorkDir\sftp.cer`""
+if ($OrgID) { $arguments += " /tenantid=$OrgID /siteid=$SiteID" }
+$process = Start-Process $setup -ArgumentList $arguments -WorkingDirectory $WorkDir -Wait -PassThru
+if ($process.ExitCode -ne 0) { throw "The official installer failed with exit code $($process.ExitCode)" }
+
+for ($i = 0; $i -lt 60 -and -not (Get-Service openuem-agent -ErrorAction SilentlyContinue); $i++) { Start-Sleep 2 }
+if (-not (Get-Service openuem-agent -ErrorAction SilentlyContinue)) { throw "The openuem-agent service was not created" }
+# Stop the agent before it reports with the official binary: the fork's binary must be
+# in place when the computer registers for the first time
+try { Stop-Service openuem-agent -Force -ErrorAction Stop } catch { }
+Get-Process -Name openuem-agent -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 # --- Fork's agent -------------------------------------------------------------
 $agentExe = $null
@@ -312,7 +334,7 @@ if ($OrgID -or $Overwrite) {
     if (-not (Test-Path $iniFile)) { throw "$iniFile was not found" }
     Stop-Service openuem-agent -Force -ErrorAction SilentlyContinue
     if ($OrgID) {
-        Write-Step "Setting organization $OrgID, site $SiteID"
+        Write-Step "Setting organization $OrgID, site $SiteID (also passed to the official installer as /tenantid /siteid)"
         if ($wasInstalled) {
             Write-Warning "This computer is already registered: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview)."
         }
