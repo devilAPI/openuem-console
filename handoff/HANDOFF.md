@@ -216,8 +216,8 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
   - Arch Linux on mainline kernel 7.3.4: a fresh install with `--org 2 --site 2` landed in site 2, then an update;
   - the same VM on `linux-lts` 6.18.64 after a reboot: the agent is running and connected;
   - Debian 13 on 6.12 LTS: took over an existing configuration;
-  - `--org` without `--site` is refused.
-  - Not tested: the takeover of an installed official .deb.
+  - `--org` without `--site` is refused;
+  - **takeover of an installed official .deb** (2026-11-19, `uemlegacy`, Debian 13, official `openuem-agent` 0.11.0 .deb, active agent and updater, own UUID): the installer exited 0, saved the official binary as `openuem-agent.official` (SHA-256 verified), installed the fork build (SHA-256 matches the server's `agent-builds`), kept the configuration (UUID, org/site untouched; only `NATSServers` was switched to the fork server), replaced the certificates with the server's, disabled and stopped `openuem-agent-updater`, added the hosts entries and left the service running. The computer appeared on the fork server as waiting for admission, was admitted in the console, shows as Enabled with inventory (Debian 13.7) and answers "Check for updates" (dpkg). A second run is an idempotent update: exit 0, the fork binary stays, `.official` is not overwritten (the message now says "is kept as" instead of "was saved as"). The package stays installed (`dpkg-query` still reports it), so a later `apt upgrade` would replace the binary again; re-running the installer restores the fork build.
 - **Tested on the VMs (2026-11-19):**
   - update as SYSTEM (`/S`): exit code 0, binary replaced;
   - fresh install as SYSTEM on a computer without agent, config or hosts entries: exit code 0, hosts entries added, official agent plus the fork's binary installed, computer appeared as waiting for admission, admitted, reported and registered the winget source;

@@ -240,8 +240,10 @@ EOF
 fi
 
 systemctl stop openuem-agent 2>/dev/null || true
+OFFICIAL_SAVED=0
 if [ "$OFFICIAL_PACKAGE" = "1" ] && [ -f "$AGENT_BIN" ] && [ ! -f "$AGENT_BIN.official" ]; then
     cp -p "$AGENT_BIN" "$AGENT_BIN.official"
+    OFFICIAL_SAVED=1
 fi
 install -m 755 "$FILES_DIR/linux-$ARCH/openuem-agent" "$AGENT_BIN.new"
 mv -f "$AGENT_BIN.new" "$AGENT_BIN"
@@ -268,7 +270,11 @@ if ! systemctl is-active --quiet openuem-agent; then
 fi
 
 printf '\n\033[1;32mOpenUEM agent service: running (fork build %s)\033[0m\n' "${AGENT_COMMIT:-unknown}"
-[ "$OFFICIAL_PACKAGE" = "0" ] || echo "The official package's binary was saved as $AGENT_BIN.official"
+if [ "$OFFICIAL_SAVED" = "1" ]; then
+    echo "The official package's binary was saved as $AGENT_BIN.official"
+elif [ "$OFFICIAL_PACKAGE" = "1" ]; then
+    echo "The official package's binary is kept as $AGENT_BIN.official"
+fi
 [ "$FIRST_INSTALL" = "0" ] || echo "Next: admit this computer in https://console.${DOMAIN}:1323 (Agents)"
 echo "Log: /var/log/openuem-agent/ and journalctl -u openuem-agent"
 echo "Don't use 'update agents' in the console for this computer, it would replace the fork's agent."
