@@ -634,7 +634,7 @@ DOCKERFILE_EOF
     retry docker build -q -t "openuem-fork-innosetup:${INNO_SETUP_VERSION}" "$INNO_IMAGE_DIR" ||
         die "the Inno Setup compiler image could not be built, see the output above. If it's a download error, run the script again"
     retry docker run --rm -v "$SETUP_BUILD:/build" -w /build "openuem-fork-innosetup:${INNO_SETUP_VERSION}" \
-        sh -c 'wine "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe" /Q setup.iss' ||
+        sh -c 'for d in "/root/.wine/drive_c/Program Files (x86)/Inno Setup 6" "/root/.wine/drive_c/Program Files/Inno Setup 6"; do [ -f "$d/ISCC.exe" ] && exec wine "$d/ISCC.exe" /Q setup.iss; done; echo "ISCC.exe not found" >&2; exit 1' ||
         die "compiling setup.iss failed, see the output above"
     setup_exe="$(find "$SETUP_BUILD" -type f -name openuem-agent-fork-setup.exe | head -n1)"
     [ -n "$setup_exe" ] || die "ISCC produced no openuem-agent-fork-setup.exe"
