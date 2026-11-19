@@ -36,6 +36,8 @@ BUILD_AGENTS="${BUILD_AGENTS:-1}"
 # It is built with Inno Setup, like the official openuem-agent-setup.exe.
 OFFICIAL_AGENT_VERSION="${OFFICIAL_AGENT_VERSION:-0.11.0}"
 INNO_SETUP_VERSION="${INNO_SETUP_VERSION:-6.6.1}"
+# GitHub release tag of the Inno Setup compiler, e.g. is-6_6_1
+INNO_SETUP_TAG="${INNO_SETUP_TAG:-is-$(echo "$INNO_SETUP_VERSION" | tr . _)}"
 AGENT_SCRIPT_URL="${AGENT_SCRIPT_URL:-https://raw.githubusercontent.com/devilAPI/openuem-console/install-script/install-openuem-agent-fork.ps1}"
 # The Linux installer openuem-agent-fork-install.sh is built from this script and also
 # bundles the official .deb packages (amd64, arm64) from the OpenUEM apt repository
@@ -624,7 +626,7 @@ RUN dpkg --add-architecture i386 \\
     && apt-get update -qq \\
     && apt-get install -y -qq --no-install-recommends wine wine32:i386 wine64 curl ca-certificates >/dev/null \\
     && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL -o /tmp/innosetup.exe "https://files.jrsoftware.org/is/6/innosetup-${INNO_SETUP_VERSION}.exe" \\
+RUN curl -fsSL -o /tmp/innosetup.exe "https://github.com/jrsoftware/issrc/releases/download/${INNO_SETUP_TAG}/innosetup-${INNO_SETUP_VERSION}.exe" \\
     && wine /tmp/innosetup.exe /VERYSILENT /SUPPRESSMSGBOXES /ALLUSERS /SP- /NORESTART \\
     && rm -f /tmp/innosetup.exe
 WORKDIR /build
