@@ -279,8 +279,10 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 										add .hidden to #schedule-once then add .hidden to #schedule-time then add .hidden to #schedule-weekday then add .hidden to #schedule-monthday then add .hidden to #schedule-cron
 										if my.value == 'once' then remove .hidden from #schedule-once
 										if my.value == 'daily' then remove .hidden from #schedule-time
-										if my.value == 'weekly' then remove .hidden from #schedule-time then remove .hidden from #schedule-weekday
-										if my.value == 'monthly' then remove .hidden from #schedule-time then remove .hidden from #schedule-monthday
+										if my.value == 'weekly' then remove .hidden from #schedule-time
+										if my.value == 'weekly' then remove .hidden from #schedule-weekday
+										if my.value == 'monthly' then remove .hidden from #schedule-time
+										if my.value == 'monthly' then remove .hidden from #schedule-monthday
 										if my.value == 'custom' then remove .hidden from #schedule-cron"
 								>
 									for _, f := range []string{FrequencyOnce, FrequencyDaily, FrequencyWeekly, FrequencyMonthly, FrequencyCustom} {
