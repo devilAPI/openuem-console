@@ -414,11 +414,11 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 								<div id="scheduled-package-results" class="uk-flex uk-flex-column gap-1"></div>
 							</div>
 							<div id="scheduled-profile" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsProfileType(event)) }>
-								<label class="uk-form-label" for="scheduled-profile">{ i18n.T(ctx, "scheduled.profile") }</label>
+								<label class="uk-form-label" for="scheduled-profile-selection">{ i18n.T(ctx, "scheduled.profile") }</label>
 								if len(profiles) == 0 {
 									<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_empty") }</p>
 								} else {
-									<select class="uk-select" id="scheduled-profile" name="profileId" required>
+									<select class="uk-select" id="scheduled-profile-selection" name="profileId" required>
 										<option value="">{ i18n.T(ctx, "scheduled.profile_select") }</option>
 										for _, profile := range profiles {
 											<option value={ fmt.Sprintf("%d", profile.ID) } selected={ scheduledEventProfileID(event) == profile.ID }>
