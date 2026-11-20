@@ -432,9 +432,11 @@ if [ "$BUILD_AGENTS" = "1" ]; then
     # ------------------------------------------------------------------------
     # Windows setup program: an Inno Setup installer (like the official
     # openuem-agent-setup.exe) that runs install-openuem-agent-fork.ps1 with the
-    # bundled files, silently, so it can be rolled out with GPO, Intune or any
-    # software deployment tool. It contains the agents' private key, like the
-    # official setup with its certificates: keep it internal.
+    # bundled files. Like the official setup it shows its wizard when it's started,
+    # and installs silently with Inno's switches (/VERYSILENT /SUPPRESSMSGBOXES
+    # /NORESTART), so it can also be rolled out with GPO, Intune or any software
+    # deployment tool. It contains the agents' private key, like the official setup
+    # with its certificates: keep it internal.
     # ------------------------------------------------------------------------
     info "Building the Windows setup program openuem-agent-fork-setup.exe (Inno Setup $INNO_SETUP_VERSION)"
     for value in "$SERVER_IP" "$OPENUEM_DOMAIN" "$NATS_PORT" "$AGENT_SFTP_PORT" "$AGENT_VNC_PORT" "$OFFICIAL_AGENT_VERSION" "$INNO_SETUP_VERSION" "$AGENT_COMMIT"; do
@@ -473,10 +475,13 @@ if [ "$BUILD_AGENTS" = "1" ]; then
         "$INSTALL_DIR/certificates/ca/ca.cer" "$INSTALL_DIR/certificates/agents/agent.cer" \
         "$INSTALL_DIR/certificates/agents/agent.key" "$INSTALL_DIR/certificates/console/sftp.cer" \
         "$SETUP_BUILD/files/"
-    # The Inno Setup script: always silent. Started without /VERYSILENT it extracts the
-    # bundled files to {tmp} and runs the PowerShell installer with -FilesDir right in
-    # InitializeSetup (before any UI; a re-launch would be blocked by the setup mutex);
-    # with /VERYSILENT the [Files] go to {tmp}\files and the worker runs at ssPostInstall.
+    # The Inno Setup script: like the official openuem-agent-setup.exe it shows the
+    # setup wizard when it's started, and installs silently with Inno's silent switches,
+    # e.g. /VERYSILENT /SUPPRESSMSGBOXES /NORESTART. In both modes the [Files] are
+    # extracted to {tmp}\files and the worker (install-openuem-agent-fork.ps1 with
+    # -FilesDir) runs right after the install: it runs the official installer with the
+    # official flags and then swaps in the fork's binary. A failed installation is
+    # reported with a message box in a wizard run, and with the exit code otherwise.
     # Options: /ORG=<id> /SITE=<id> (organization and site of new computers),
     # /DOMAIN=<domain> and /SERVERIP=<ip> override the baked-in settings, /OVERWRITE
     # overwrites the installed agent's config with these settings.
@@ -502,10 +507,6 @@ AppPublisher=OpenUEM contributors
 AppPublisherURL=https://openuem.eu
 AppSupportURL=https://openuem.eu/docs
 DefaultDirName={autopf}\OpenUEM Agent Fork
-DisableWelcomePage=yes
-DisableDirPage=yes
-DisableProgramGroupPage=yes
-DisableReadyPage=yes
 Uninstallable=no
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
@@ -523,9 +524,6 @@ Source: "files\*"; DestDir: "{tmp}\files"; Flags: ignoreversion recursesubdirs c
 [Code]
 var
   WorkerExitCode: Integer;
-
-procedure ExitProcess(uExitCode: Integer);
-  external 'ExitProcess@kernel32.dll stdcall';
 
 // Value of /NAME=value, or '1' when /NAME was given without a value, else ''
 function GetParam(const ParamName: string): string;
@@ -583,44 +581,24 @@ begin
     Result := 1;
 end;
 
-// Silent run (/VERYSILENT): the [Files] are extracted to {tmp}\files, then the worker runs
+// The wizard and a silent /VERYSILENT run both end up here: the [Files] are extracted
+// to {tmp}\files, then the worker runs the official setup and swaps in the fork's binary
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     WorkerExitCode := RunWorker(ExpandConstant('{tmp}\files'));
+    // Without a wizard nobody sees the exit code: say what happened. The PowerShell
+    // worker already wrote the log at %ProgramData%\OpenUEM-fork\install-agent.log
+    if (WorkerExitCode <> 0) and not WizardSilent then
+      MsgBox('The agent installation failed. See the log at %ProgramData%\OpenUEM-fork\install-agent.log', mbError, MB_OK);
+  end;
 end;
 
-// Exit code of the silent run: 0 = OK, 1 = the agent installation failed
+// Exit code of the installation: 0 = OK, 1 = the agent installation failed
 function GetCustomSetupExitCode: Integer;
 begin
   Result := WorkerExitCode;
-end;
-
-// Always silent, even when started without /VERYSILENT: run the worker right here,
-// before any wizard form is created, and exit with its code (a re-launch of this exe
-// would be blocked by the setup mutex of the running instance)
-function InitializeSetup: Boolean;
-var
-  i: Integer;
-  names: TArrayOfString;
-begin
-  Result := True;
-  if not WizardSilent then
-  begin
-    SetArrayLength(names, 7);
-    names[0] := 'install-openuem-agent-fork.ps1';
-    names[1] := 'openuem-agent-setup.exe';
-    names[2] := 'openuem-agent.exe';
-    names[3] := 'ca.cer';
-    names[4] := 'agent.cer';
-    names[5] := 'agent.key';
-    names[6] := 'sftp.cer';
-    for i := 0 to GetArrayLength(names) - 1 do
-      ExtractTemporaryFile(names[i]);
-    WorkerExitCode := RunWorker(ExpandConstant('{tmp}'));
-    DelTree(ExpandConstant('{tmp}'), True, True, True);
-    ExitProcess(WorkerExitCode);
-  end;
 end;
 ISS_EOF
     # Inno Setup compiler in a container (wine); the image is built once and cached
@@ -787,9 +765,10 @@ Agent binaries built from the fork: ${INSTALL_DIR}/agent-builds/latest/
     ${INSTALL_DIR}/agent-builds/latest/windows-amd64/openuem-agent-fork-setup.exe
     Built with Inno Setup ${INNO_SETUP_VERSION} like the official openuem-agent-setup.exe;
     it runs the official installer with the official flags and then swaps in the fork's
-    binary. It contains the agents' private key: keep it internal. Run it as administrator
-    or SYSTEM (GPO startup script, Intune Win32 app, PDQ, ...), exit code 0 = OK, 1 = failed.
-    Silent even without /S (runs the worker directly, or with /VERYSILENT /SUPPRESSMSGBOXES).
+    binary. Like the official setup it shows its wizard when it's started; add Inno's
+    silent switches for an unattended install (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART).
+    It contains the agents' private key: keep it internal. Run it as administrator or
+    SYSTEM (GPO startup script, Intune Win32 app, PDQ, ...), exit code 0 = OK, 1 = failed.
     Log: %ProgramData%\\OpenUEM-fork\\install-agent.log on the computer.
     Options: /ORG=<id> /SITE=<id>, /DOMAIN=, /SERVERIP=, /OVERWRITE (overwrites the
     installed agent's config). DNS must resolve console/nats/ocsp.<domain>; no hosts
