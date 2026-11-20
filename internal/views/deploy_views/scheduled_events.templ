@@ -207,13 +207,13 @@ templ ScheduledEvents(c echo.Context, events []*ent.ScheduledEvent, nextRuns []S
 												</div>
 											</td>
 											<td class="!align-middle">
-									<div class="flex flex-col">
-										<span>{ i18n.T(ctx, scheduledTypeLabel(event.Type)) }</span>
-										if target := scheduledEventTarget(event); target != "" {
-											<span class="uk-text-small uk-text-muted">{ target }</span>
-										}
-									</div>
-								</td>
+												<div class="flex flex-col">
+													<span>{ i18n.T(ctx, scheduledTypeLabel(event.Type)) }</span>
+													if target := scheduledEventTarget(event); target != "" {
+														<span class="uk-text-small uk-text-muted">{ target }</span>
+													}
+												</div>
+											</td>
 											<td class="!align-middle">
 												<code class="uk-text-small">{ event.Cron }</code>
 												if event.Cron == "" && event.When != nil {
@@ -358,12 +358,12 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 							</div>
 							<div class="flex flex-col gap-2">
 								<label class="uk-form-label" for="scheduled-type">{ i18n.T(ctx, "scheduled.type") }</label>
-<select
-							class="uk-select"
-							id="scheduled-type"
-							name="type"
-							required
-							_="on change
+								<select
+									class="uk-select"
+									id="scheduled-type"
+									name="type"
+									required
+									_="on change
 								add .hidden to #scheduled-package
 								add .hidden to #scheduled-profile
 								if my.value is 'installpackage' then
@@ -375,61 +375,61 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 								if my.value is 'runprofile' then
 									remove .hidden from #scheduled-profile
 								end"
-						>
-							for _, taskType := range models.ScheduledEventTypes() {
-								<option
-									value={ taskType }
-									selected={ (event != nil && event.Type == taskType) || (event == nil && taskType == models.ScheduledEventUpdateAll) }
 								>
-									{ i18n.T(ctx, scheduledTypeLabel(taskType)) }
-								</option>
-							}
-						</select>
-					</div>
-					<div id="scheduled-package" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsPackageType(event)) }>
-						<label class="uk-form-label" for="scheduled-package-search">{ i18n.T(ctx, "scheduled.package") }</label>
-						<input
-							type="text"
-							id="scheduled-package-search"
-							name="filterByAppName"
-							autocomplete="off"
-							placeholder={ i18n.T(ctx, "scheduled.search_placeholder") }
-							hx-get={ scheduledEventsPath("/searchpackages", commonInfo) }
-							hx-vals={ `{"pageSize": "25"}` }
-							hx-trigger="input changed delay:500ms from my"
-							hx-target="#scheduled-package-results"
-							hx-swap="innerHTML"
-						/>
-						<input type="hidden" id="packageId" name="packageId" value={ scheduledEventPackageID(event) }/>
-						<input type="hidden" id="packageName" name="packageName" value={ scheduledEventPackageName(event) }/>
-						<input type="hidden" id="packageBranch" name="packageBranch" value={ scheduledEventPackageBranch(event) }/>
-						<input type="hidden" id="packageBrewType" name="packageBrewType" value={ scheduledEventPackageBrewType(event) }/>
-						<input type="hidden" id="packageVerified" name="packageVerified" value={ scheduledEventPackageVerified(event) }/>
-						<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.package_description") }</p>
-						if scheduledEventIsPackageType(event) {
-							<p class="uk-text-small">
-								{ i18n.T(ctx, "scheduled.package_selected") }: <span class="uk-text-bolder" id="scheduled-package-selected">{ scheduledEventPackageName(event) }</span>
-								<code class="uk-text-small">({ scheduledEventPackageID(event) })</code>
-							</p>
-						}
-						<div id="scheduled-package-results" class="uk-flex uk-flex-column gap-1"></div>
-					</div>
-					<div id="scheduled-profile" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsProfileType(event)) }>
-						<label class="uk-form-label" for="scheduled-profile">{ i18n.T(ctx, "scheduled.profile") }</label>
-						if len(profiles) == 0 {
-							<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_empty") }</p>
-						} else {
-							<select class="uk-select" id="scheduled-profile" name="profileId" required>
-								<option value="">{ i18n.T(ctx, "scheduled.profile_select") }</option>
-								for _, profile := range profiles {
-									<option value={ fmt.Sprintf("%d", profile.ID) } selected={ scheduledEventProfileID(event) == profile.ID }>
-										{ profile.Name + scheduledEventProfileSite(profile) }
-									</option>
+									for _, taskType := range models.ScheduledEventTypes() {
+										<option
+											value={ taskType }
+											selected={ (event != nil && event.Type == taskType) || (event == nil && taskType == models.ScheduledEventUpdateAll) }
+										>
+											{ i18n.T(ctx, scheduledTypeLabel(taskType)) }
+										</option>
+									}
+								</select>
+							</div>
+							<div id="scheduled-package" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsPackageType(event)) }>
+								<label class="uk-form-label" for="scheduled-package-search">{ i18n.T(ctx, "scheduled.package") }</label>
+								<input
+									type="text"
+									id="scheduled-package-search"
+									name="filterByAppName"
+									autocomplete="off"
+									placeholder={ i18n.T(ctx, "scheduled.search_placeholder") }
+									hx-get={ scheduledEventsPath("/searchpackages", commonInfo) }
+									hx-vals={ `{"pageSize": "25"}` }
+									hx-trigger="input changed delay:500ms"
+									hx-target="#scheduled-package-results"
+									hx-swap="innerHTML"
+								/>
+								<input type="hidden" id="packageId" name="packageId" value={ scheduledEventPackageID(event) }/>
+								<input type="hidden" id="packageName" name="packageName" value={ scheduledEventPackageName(event) }/>
+								<input type="hidden" id="packageBranch" name="packageBranch" value={ scheduledEventPackageBranch(event) }/>
+								<input type="hidden" id="packageBrewType" name="packageBrewType" value={ scheduledEventPackageBrewType(event) }/>
+								<input type="hidden" id="packageVerified" name="packageVerified" value={ scheduledEventPackageVerified(event) }/>
+								<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.package_description") }</p>
+								if scheduledEventIsPackageType(event) {
+									<p class="uk-text-small">
+										{ i18n.T(ctx, "scheduled.package_selected") }: <span class="uk-text-bolder" id="scheduled-package-selected">{ scheduledEventPackageName(event) }</span>
+										<code class="uk-text-small">({ scheduledEventPackageID(event) })</code>
+									</p>
 								}
-							</select>
-						}
-						<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_description") }</p>
-					</div>
+								<div id="scheduled-package-results" class="uk-flex uk-flex-column gap-1"></div>
+							</div>
+							<div id="scheduled-profile" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsProfileType(event)) }>
+								<label class="uk-form-label" for="scheduled-profile">{ i18n.T(ctx, "scheduled.profile") }</label>
+								if len(profiles) == 0 {
+									<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_empty") }</p>
+								} else {
+									<select class="uk-select" id="scheduled-profile" name="profileId" required>
+										<option value="">{ i18n.T(ctx, "scheduled.profile_select") }</option>
+										for _, profile := range profiles {
+											<option value={ fmt.Sprintf("%d", profile.ID) } selected={ scheduledEventProfileID(event) == profile.ID }>
+												{ profile.Name + scheduledEventProfileSite(profile) }
+											</option>
+										}
+									</select>
+								}
+								<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_description") }</p>
+							</div>
 							<div class="flex flex-col gap-2">
 								<label class="uk-form-label" for="scheduled-frequency">{ i18n.T(ctx, "scheduled.frequency") }</label>
 								<select
