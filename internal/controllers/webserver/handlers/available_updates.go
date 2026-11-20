@@ -106,12 +106,17 @@ func (h *Handler) RefreshAvailableUpdates() {
 			info := agentUpdates{TenantID: source.TenantID, SiteID: source.SiteID}
 
 			msg, err := h.NATSConnection.Request("agent.listpackageupdates."+source.ID, request, listPackageUpdatesTimeout)
-			if err == nil {
-				response := openuem_nats.AvailableUpdatesResponse{}
-				if err := json.Unmarshal(msg.Data, &response); err == nil {
-					info.Count = len(response.Updates)
-				}
+			if err != nil {
+				// The computer is offline or doesn't support software updates: it
+				// gets no entry, so it isn't counted until it answers
+				return
 			}
+
+			response := openuem_nats.AvailableUpdatesResponse{}
+			if err := json.Unmarshal(msg.Data, &response); err != nil {
+				return
+			}
+			info.Count = len(response.Updates)
 
 			mu.Lock()
 			next[source.ID] = info
