@@ -397,6 +397,7 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 									hx-get={ scheduledEventsPath("/searchpackages", commonInfo) }
 									hx-vals={ `{"pageSize": "25"}` }
 									hx-trigger="input changed delay:500ms"
+							hx-disabled-elt="unset"
 									hx-target="#scheduled-package-results"
 									hx-swap="innerHTML"
 								/>
