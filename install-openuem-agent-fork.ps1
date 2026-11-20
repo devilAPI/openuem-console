@@ -48,6 +48,10 @@
     .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -Overwrite
 
 .EXAMPLE
+    # Re-register the installed agent as a new computer of organization 3, site 3
+    .\install-openuem-agent-fork.ps1 -ServerIP 192.0.2.10 -Domain uem.example.com -Overwrite -OrgID 3 -SiteID 3
+
+.EXAMPLE
     # Update with the settings of the last run
     .\install-openuem-agent-fork.ps1
 
@@ -72,7 +76,10 @@ param(
     # Install only the official agent, without the fork's binary
     [switch]$OfficialOnly,
     # Overwrite the installed agent's config (nats server, ports, and organization/site
-    # when -OrgID/-SiteID are given) with the settings of this run
+    # when -OrgID/-SiteID are given) with the settings of this run. With -OrgID/-SiteID
+    # the installed agent also gets a fresh UUID, so it registers again as a NEW
+    # computer of that organization and site (the old entry stays in the console
+    # until it's deleted)
     [switch]$Overwrite,
     # Take the certificates, the fork's agent and the official setup from this folder
     # instead of copying them from the server over SSH (used by the setup program)
@@ -336,10 +343,20 @@ if ($OrgID -or $Overwrite) {
     if ($OrgID) {
         Write-Step "Setting organization $OrgID, site $SiteID (also passed to the official installer as /tenantid /siteid)"
         if ($wasInstalled) {
-            Write-Warning "This computer is already registered: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview)."
+            Write-Warning "Without -Overwrite this does not move the registered computer: -OrgID/-SiteID only apply to new computers. Move it in the console (computer > Overview), or run with -Overwrite to register it again as a new computer of that organization and site."
         }
         Set-IniValue $iniFile "Agent" "TenantID" $OrgID
         Set-IniValue $iniFile "Agent" "SiteID" $SiteID
+        if ($wasInstalled -and $Overwrite) {
+            # The console assigns the organization by the report's tenant, and an
+            # existing agent keeps whatever site the database says. So the only way to
+            # put an installed agent into the new organization and site is to make it a
+            # NEW computer: with a fresh UUID the agent registers on its next start,
+            # with the organization and site of the INI file. The old entry of this
+            # computer stays in the console until it's deleted there
+            Write-Step "-Overwrite: resetting the agent's UUID so it registers again as a new computer of organization $OrgID, site $SiteID"
+            Set-IniValue $iniFile "Agent" "UUID" ""
+        }
     }
     if ($Overwrite) {
         Write-Step "Overwriting $iniFile with the settings of this run"

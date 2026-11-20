@@ -241,8 +241,11 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
   fork's binary; a computer with the agent gets the official installer re-run plus the new binary.
 - **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`.
   No hosts entries are written; DNS must resolve the names.
-- **Options:** `/ORG=<id> /SITE=<id>` (organization and site of new computers, passed to the
-  script as `-OrgID`/`-SiteID` and to the official installer as `/tenantid=`/`/siteid=`),
+- **Options:** `/ORG=<id> /SITE=<id>` (organization and site of a new computer, passed to the
+  script as `-OrgID`/`-SiteID` and to the official installer as `/tenantid=`/`/siteid=`; together
+  with `/OVERWRITE` an already installed agent registers again as a NEW computer of that
+  organization and site, with a fresh UUID — the old computer entry stays in the console until
+  it's deleted there),
   `/DOMAIN=` and `/SERVERIP=` override the baked-in settings, `/OVERWRITE` overwrites the
   installed agent's config with them.
 - **Log:** `%ProgramData%\OpenUEM-fork\install-agent.log` on the computer.
