@@ -26,6 +26,29 @@ type SystemUpdate struct {
 	SiteID             int
 }
 
+// AvailableUpdatesCounts classifies the computers by how many software updates they
+// need, based on the console's last count of them
+type AvailableUpdatesCounts struct {
+	// Zero is the number of computers whose package managers had no update to offer
+	Zero int
+	// UnderFive is the number of computers that need 1 to 4 updates
+	UnderFive int
+	// FiveToTwenty is the number of computers that need 5 to 20 updates
+	FiveToTwenty int
+	// OverTwenty is the number of computers that need more than 20 updates
+	OverTwenty int
+}
+
+// Total returns the number of computers the classification is based on
+func (c AvailableUpdatesCounts) Total() int {
+	return c.Zero + c.UnderFive + c.FiveToTwenty + c.OverTwenty
+}
+
+// NeedingUpdates returns the number of computers that need at least one update
+func (c AvailableUpdatesCounts) NeedingUpdates() int {
+	return c.UnderFive + c.FiveToTwenty + c.OverTwenty
+}
+
 // UpdateRunStatusCounts classifies the agents of an organization by the result of their
 // last software update run, it's filled in by the console's dashboard with the live
 // status answers of the agents

@@ -119,6 +119,9 @@ func (h *Handler) Dashboard(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	// From the console's hourly count of the updates the computers need
+	data.NComputersNeedingUpdates = h.availableUpdatesCounts(commonInfo).NeedingUpdates()
+
 	data.NOpenUEMUsers, err = h.Model.CountAllUsers(filters.UserFilter{})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -197,22 +200,9 @@ func (h *Handler) generateCharts(c echo.Context) (*dashboard_views.DashboardChar
 	totalDeployments := deploymentCounts.Installed + deploymentCounts.Failed + deploymentCounts.Pending
 	ch.DeploymentsByStatus = charts.DeploymentsByStatus(c.Request().Context(), deploymentCounts, totalDeployments)
 
-	// Packages of the fork's private winget repository by installer type
-	countByType := map[string]int{}
-	if h.WinGetLibrary != nil {
-		packages, err := h.libraryPackages(commonInfo)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range packages {
-			countByType[p.Type()]++
-		}
-	}
-	totalLibraryPackages := 0
-	for _, count := range countByType {
-		totalLibraryPackages += count
-	}
-	ch.LibraryPackagesByInstaller = charts.LibraryPackagesByInstaller(c.Request().Context(), countByType, totalLibraryPackages)
+	// How many software updates the computers need, from the hourly background job:
+	// counting them runs the computers' package managers, which takes minutes
+	ch.AgentByAvailableUpdates = charts.AvailableUpdates(c.Request().Context(), h.availableUpdatesCounts(commonInfo))
 
 	// Agents by the result of their last software update run, live from the agents.
 	// The agents are only asked when the console is connected, otherwise every agent
