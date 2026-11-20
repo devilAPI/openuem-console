@@ -136,4 +136,4 @@ require (
 
 replace github.com/open-uem/nats => github.com/devilAPI/nats v0.0.0-20261105200231-d9b855acd99e
 
-replace github.com/open-uem/ent => github.com/devilAPI/ent v0.0.0-20261120111527-1b23ef397c05
+replace github.com/open-uem/ent => github.com/devilAPI/ent v0.0.0-20261120155057-2817c60008ba

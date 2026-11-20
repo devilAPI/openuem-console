@@ -43,6 +43,10 @@ type ScheduledEventData struct {
 	Type        string
 	Cron        string
 	When        *time.Time
+	// Package is the software package an installpackage or updatepackage event deploys
+	Package models.ScheduledEventPackage
+	// ProfileID is the profile whose tasks a runprofile event asks the computers to run
+	ProfileID int
 }
 
 // EnableScheduledEventsJobs starts running the scheduled tasks: the console
@@ -250,6 +254,12 @@ func (h *Handler) RunScheduledEvent(eventID int) {
 	switch event.Type {
 	case models.ScheduledEventUpdateAll:
 		failed, summary = h.runScheduledUpdateAll(agents)
+	case models.ScheduledEventInstallPackage:
+		failed, summary = h.runScheduledPackageAction(agents, event, deploy_views.ActionInstall)
+	case models.ScheduledEventUpdatePackage:
+		failed, summary = h.runScheduledPackageAction(agents, event, deploy_views.ActionUpdate)
+	case models.ScheduledEventRunProfile:
+		failed, summary = h.runScheduledProfile(agents, event)
 	case models.ScheduledEventPowerOff:
 		failed, summary = h.runScheduledPowerAction(agents, "poweroff")
 	case models.ScheduledEventRestart:
@@ -413,6 +423,151 @@ func (h *Handler) runScheduledWakeOnLAN(agents []*ent.Agent) (bool, string) {
 	}
 }
 
+// runScheduledPackageAction asks every agent to install or update the software
+// package the event was configured with, the same way Deploy does. Only agents
+// that are online can be asked; the consoles shows each result as a deployment
+func (h *Handler) runScheduledPackageAction(agents []*ent.Agent, event *ent.ScheduledEvent, action string) (bool, string) {
+	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
+		return true, "The console was not connected to the messaging server, so no computer could be asked to " + action + " the software package"
+	}
+
+	if event.PackageID == "" {
+		return true, fmt.Sprintf("The task does not define a software package to %s anymore", action)
+	}
+
+	siteID := -1
+	if event.Edges.Site != nil {
+		siteID = event.Edges.Site.ID
+	}
+	tenantID := -1
+	if event.Edges.Tenant != nil {
+		tenantID = event.Edges.Tenant.ID
+	}
+
+	// The deployment queries of the model need the common info of the organization
+	commonInfo := &partials.CommonInfo{TenantID: strconv.Itoa(tenantID), SiteID: strconv.Itoa(siteID)}
+
+	if len(agents) == 0 {
+		return false, "No enabled computer belongs to the organization of this task"
+	}
+
+	asked, failures := 0, 0
+	limit := make(chan struct{}, updatePackagesConcurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, a := range agents {
+		wg.Add(1)
+		limit <- struct{}{}
+		go func(agentID string) {
+			defer wg.Done()
+			defer func() { <-limit }()
+
+			mu.Lock()
+			asked++
+			mu.Unlock()
+
+			deployAction := openuem_nats.DeployAction{
+				AgentId:         agentID,
+				Action:          action,
+				PackageId:       event.PackageID,
+				PackageName:     event.PackageName,
+				PackageBranch:   event.PackageBranch,
+				PackageBrewType: event.PackageBrewType,
+				PackageVerified: event.PackageVerified,
+			}
+
+			deploymentFailed, err := h.Model.DeploymentFailed(agentID, event.PackageID, commonInfo)
+			if err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+				return
+			}
+
+			data, err := json.Marshal(deployAction)
+			if err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+				return
+			}
+
+			if err := h.NATSConnection.Publish(agentPackageSubjects[action]+agentID, data); err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+				return
+			}
+
+			if err := h.Model.SaveDeployInfo(&deployAction, deploymentFailed, commonInfo); err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+				return
+			}
+		}(a.ID)
+	}
+	wg.Wait()
+
+	if failures > 0 {
+		return failures == len(agents), fmt.Sprintf("%d computer(s) were asked to %s %s, %d request(s) failed", asked-failures, action, event.PackageName, failures)
+	}
+	return false, fmt.Sprintf("%d computer(s) were asked to %s %s", asked, action, event.PackageName)
+}
+
+// runScheduledProfile asks every agent to run the tasks of the profile the
+// event references. The agent answers right away and reports the tasks results
+// to the console afterwards
+func (h *Handler) runScheduledProfile(agents []*ent.Agent, event *ent.ScheduledEvent) (bool, string) {
+	if h.NATSConnection == nil || !h.NATSConnection.IsConnected() {
+		return true, "The console was not connected to the messaging server, so no computer could be asked to run the profile"
+	}
+
+	if event.Edges.Profile == nil {
+		return true, "The task does not reference a profile anymore, it may have been deleted"
+	}
+
+	if len(agents) == 0 {
+		return false, "No enabled computer belongs to the organization of this task"
+	}
+
+	request, err := json.Marshal(openuem_nats.CfgProfiles{ProfileID: event.Edges.Profile.ID})
+	if err != nil {
+		return true, fmt.Sprintf("Could not prepare the request, reason: %v", err)
+	}
+
+	asked, failures := 0, 0
+	limit := make(chan struct{}, updatePackagesConcurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, a := range agents {
+		wg.Add(1)
+		limit <- struct{}{}
+		go func(agentID string) {
+			defer wg.Done()
+			defer func() { <-limit }()
+
+			mu.Lock()
+			asked++
+			mu.Unlock()
+
+			if _, err := h.NATSConnection.Request("agent.runprofile."+agentID, request, time.Duration(h.NATSTimeout)*time.Second); err != nil {
+				mu.Lock()
+				failures++
+				mu.Unlock()
+			}
+		}(a.ID)
+	}
+	wg.Wait()
+
+	if failures > 0 {
+		return failures == len(agents), fmt.Sprintf("%d computer(s) were asked to run the profile %q, %d did not answer", asked-failures, event.Edges.Profile.Name, failures)
+	}
+	return false, fmt.Sprintf("%d computer(s) were asked to run the profile %q", asked, event.Edges.Profile.Name)
+}
+
 // ScheduledEvents renders the list of scheduled tasks of the organization and site
 func (h *Handler) ScheduledEvents(c echo.Context) error {
 	return h.renderScheduledEvents(c, "")
@@ -457,7 +612,43 @@ func (h *Handler) NewScheduledEvent(c echo.Context) error {
 		return err
 	}
 
-	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.ScheduledEventForm(c, nil, deploy_views.FrequencyDaily, commonInfo), commonInfo))
+	profiles, err := h.scheduledEventProfiles(c, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
+	}
+
+	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.ScheduledEventForm(c, nil, deploy_views.FrequencyDaily, profiles, commonInfo), commonInfo))
+}
+
+// scheduledEventProfiles returns the profiles a run profile task of the current
+// organization (or site) can reference
+func (h *Handler) scheduledEventProfiles(c echo.Context, commonInfo *partials.CommonInfo) ([]*ent.Profile, error) {
+	tenantID, err := strconv.Atoi(commonInfo.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	siteID, err := strconv.Atoi(commonInfo.SiteID)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.Model.GetScheduledEventProfiles(tenantID, siteID)
+}
+
+// ScheduledEventSearchPackages searches the software packages for the package
+// picker of the scheduled task form: the task deploys the chosen package
+func (h *Handler) ScheduledEventSearchPackages(c echo.Context) error {
+	commonInfo, err := h.GetCommonInfo(c)
+	if err != nil {
+		return err
+	}
+
+	packages, p, _, _, _, err := h.findPackages(c, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+	}
+
+	return RenderView(c, deploy_views.ScheduledEventPackagesResult(c, packages, p, commonInfo))
 }
 
 // CreateScheduledEvent validates the submitted form, stores the new task in the
@@ -482,7 +673,11 @@ func (h *Handler) CreateScheduledEvent(c echo.Context) error {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "scheduled.wrong_schedule", err.Error()), false))
 	}
 
-	event, err := h.Model.CreateScheduledEvent(tenantID, siteID, data.Description, data.Type, data.Cron, data.When)
+	if err := h.validateScheduledEventReference(c, data, tenantID, siteID); err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
+	}
+
+	event, err := h.Model.CreateScheduledEvent(tenantID, siteID, data.Description, data.Type, data.Cron, data.When, data.Package, data.ProfileID)
 	if err != nil {
 		return RenderError(c, partials.ErrorMessage(err.Error(), false))
 	}
@@ -523,7 +718,12 @@ func (h *Handler) EditScheduledEvent(c echo.Context) error {
 		frequency = deploy_views.FrequencyOnce
 	}
 
-	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.ScheduledEventForm(c, event, frequency, commonInfo), commonInfo))
+	profiles, err := h.scheduledEventProfiles(c, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
+	}
+
+	return RenderView(c, deploy_views.DeployIndex("| Deploy", deploy_views.ScheduledEventForm(c, event, frequency, profiles, commonInfo), commonInfo))
 }
 
 // SaveScheduledEvent validates the submitted form, updates the task in the
@@ -532,6 +732,15 @@ func (h *Handler) SaveScheduledEvent(c echo.Context) error {
 	commonInfo, err := h.GetCommonInfo(c)
 	if err != nil {
 		return err
+	}
+
+	tenantID, err := strconv.Atoi(commonInfo.TenantID)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "scheduled.wrong_schedule", err.Error()), false))
+	}
+	siteID, err := strconv.Atoi(commonInfo.SiteID)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "scheduled.wrong_schedule", err.Error()), false))
 	}
 
 	id, err := strconv.Atoi(c.Param("id"))
@@ -553,7 +762,11 @@ func (h *Handler) SaveScheduledEvent(c echo.Context) error {
 		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "scheduled.wrong_schedule", err.Error()), false))
 	}
 
-	if err := h.Model.UpdateScheduledEvent(id, data.Description, data.Type, data.Cron, data.When); err != nil {
+	if err := h.validateScheduledEventReference(c, data, tenantID, siteID); err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), false))
+	}
+
+	if err := h.Model.UpdateScheduledEvent(id, data.Description, data.Type, data.Cron, data.When, data.Package, data.ProfileID); err != nil {
 		return RenderError(c, partials.ErrorMessage(err.Error(), false))
 	}
 
@@ -724,6 +937,30 @@ func (h *Handler) parseScheduledEventForm(c echo.Context) (ScheduledEventData, e
 		return data, errors.New(i18n.T(ctx, "scheduled.wrong_type"))
 	}
 
+	// Install and update package tasks define the software package they deploy,
+	// a run profile task defines the profile whose tasks the computers run
+	switch data.Type {
+	case models.ScheduledEventInstallPackage, models.ScheduledEventUpdatePackage:
+		data.Package.ID = strings.TrimSpace(c.FormValue("packageId"))
+		data.Package.Name = strings.TrimSpace(c.FormValue("packageName"))
+		data.Package.Branch = strings.TrimSpace(c.FormValue("packageBranch"))
+		data.Package.BrewType = strings.TrimSpace(c.FormValue("packageBrewType"))
+		data.Package.Verified = c.FormValue("packageVerified") == "true"
+
+		if data.Package.ID == "" || len(data.Package.ID) > 250 || len(data.Package.Name) > 250 {
+			return data, errors.New(i18n.T(ctx, "scheduled.wrong_package"))
+		}
+		if data.Package.BrewType != "" && !slices.Contains([]string{"cask", "formula"}, data.Package.BrewType) {
+			return data, errors.New(i18n.T(ctx, "scheduled.wrong_package"))
+		}
+	case models.ScheduledEventRunProfile:
+		profileID, err := strconv.Atoi(c.FormValue("profileId"))
+		if err != nil || profileID < 1 {
+			return data, errors.New(i18n.T(ctx, "scheduled.wrong_profile"))
+		}
+		data.ProfileID = profileID
+	}
+
 	frequency := c.FormValue("frequency")
 	switch frequency {
 	case deploy_views.FrequencyOnce:
@@ -797,4 +1034,47 @@ func matchScheduledCron(cronExpression string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// validateScheduledEventReference checks that a run profile task references a
+// profile its organization (or site) can use
+func (h *Handler) validateScheduledEventReference(c echo.Context, data ScheduledEventData, tenantID, siteID int) error {
+	if data.Type != models.ScheduledEventRunProfile || data.ProfileID == -1 {
+		return nil
+	}
+
+	profile, err := h.Model.GetScheduledEventProfile(data.ProfileID)
+	if err != nil {
+		return errors.New(i18n.T(c.Request().Context(), "scheduled.wrong_profile"))
+	}
+
+	// A profile can be assigned to the organization (and some of its sites),
+	// so the event's tenant must be one of the profile's
+	inTenant := false
+	for _, t := range profile.Edges.Tenant {
+		if t.ID == tenantID {
+			inTenant = true
+			break
+		}
+	}
+	if !inTenant {
+		return errors.New(i18n.T(c.Request().Context(), "scheduled.wrong_profile_scope"))
+	}
+
+	// A site event can only reference the profiles of its site, or the
+	// organization-wide ones
+	if siteID != -1 && len(profile.Edges.Site) > 0 {
+		inSite := false
+		for _, s := range profile.Edges.Site {
+			if s.ID == siteID {
+				inSite = true
+				break
+			}
+		}
+		if !inSite {
+			return errors.New(i18n.T(c.Request().Context(), "scheduled.wrong_profile_scope"))
+		}
+	}
+
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	ent "github.com/open-uem/ent"
 	"github.com/open-uem/ent/agent"
+	"github.com/open-uem/ent/profile"
 	"github.com/open-uem/ent/scheduledevent"
 	"github.com/open-uem/ent/site"
 	"github.com/open-uem/ent/tenant"
@@ -13,15 +14,36 @@ import (
 
 // Actions that a scheduled event can run on the agents of an organization (or site)
 const (
-	ScheduledEventUpdateAll = "updateall"
-	ScheduledEventPowerOff  = "poweroff"
-	ScheduledEventRestart   = "reboot"
-	ScheduledEventWakeOnLAN = "wakeonlan"
+	ScheduledEventUpdateAll      = "updateall"
+	ScheduledEventPowerOff       = "poweroff"
+	ScheduledEventRestart        = "reboot"
+	ScheduledEventWakeOnLAN      = "wakeonlan"
+	ScheduledEventInstallPackage = "installpackage"
+	ScheduledEventUpdatePackage  = "updatepackage"
+	ScheduledEventRunProfile     = "runprofile"
 )
 
 // ScheduledEventTypes returns the list of tasks that can be scheduled
 func ScheduledEventTypes() []string {
-	return []string{ScheduledEventUpdateAll, ScheduledEventPowerOff, ScheduledEventRestart, ScheduledEventWakeOnLAN}
+	return []string{
+		ScheduledEventUpdateAll,
+		ScheduledEventInstallPackage,
+		ScheduledEventUpdatePackage,
+		ScheduledEventRunProfile,
+		ScheduledEventPowerOff,
+		ScheduledEventRestart,
+		ScheduledEventWakeOnLAN,
+	}
+}
+
+// ScheduledEventPackage is the software package an installpackage or updatepackage
+// event deploys to the computers of its organization (or site)
+type ScheduledEventPackage struct {
+	ID       string
+	Name     string
+	Branch   string
+	BrewType string
+	Verified bool
 }
 
 // GetScheduledEvents returns the scheduled events of a tenant, optionally limited to one site
@@ -32,23 +54,25 @@ func (m *Model) GetScheduledEvents(tenantID, siteID int) ([]*ent.ScheduledEvent,
 		query = query.Where(scheduledevent.HasSiteWith(site.ID(siteID)))
 	}
 
-	return query.WithTenant().WithSite().Order(ent.Asc(scheduledevent.FieldCreatedAt)).All(context.Background())
+	return query.WithTenant().WithSite().WithProfile().Order(ent.Asc(scheduledevent.FieldCreatedAt)).All(context.Background())
 }
 
 // GetScheduledEvent returns a scheduled event by its id
 func (m *Model) GetScheduledEvent(id int) (*ent.ScheduledEvent, error) {
-	return m.Client.ScheduledEvent.Query().Where(scheduledevent.ID(id)).WithTenant().WithSite().Only(context.Background())
+	return m.Client.ScheduledEvent.Query().Where(scheduledevent.ID(id)).WithTenant().WithSite().WithProfile().Only(context.Background())
 }
 
 // GetEnabledScheduledEvents returns every enabled scheduled event, regardless of tenant and site
 func (m *Model) GetEnabledScheduledEvents() ([]*ent.ScheduledEvent, error) {
-	return m.Client.ScheduledEvent.Query().Where(scheduledevent.EnabledEQ(true)).WithTenant().WithSite().All(context.Background())
+	return m.Client.ScheduledEvent.Query().Where(scheduledevent.EnabledEQ(true)).WithTenant().WithSite().WithProfile().All(context.Background())
 }
 
 // CreateScheduledEvent stores a new scheduled event. A recurring event defines
 // a cron expression, an event that happens only once defines the date and time
-// when it must run.
-func (m *Model) CreateScheduledEvent(tenantID, siteID int, description, eventType, cron string, when *time.Time) (*ent.ScheduledEvent, error) {
+// when it must run. The install and update package events define the software
+// package they deploy, the run profile event references the profile whose tasks
+// the computers run.
+func (m *Model) CreateScheduledEvent(tenantID, siteID int, description, eventType, cron string, when *time.Time, pkg ScheduledEventPackage, profileID int) (*ent.ScheduledEvent, error) {
 	query := m.Client.ScheduledEvent.Create().
 		SetDescription(description).
 		SetType(eventType).
@@ -64,12 +88,28 @@ func (m *Model) CreateScheduledEvent(tenantID, siteID int, description, eventTyp
 		query.SetSiteID(siteID)
 	}
 
+	switch eventType {
+	case ScheduledEventInstallPackage, ScheduledEventUpdatePackage:
+		query.SetPackageID(pkg.ID).SetPackageName(pkg.Name)
+		if pkg.Branch != "" {
+			query.SetPackageBranch(pkg.Branch)
+		}
+		if pkg.BrewType != "" {
+			query.SetPackageBrewType(pkg.BrewType)
+		}
+		query.SetPackageVerified(pkg.Verified)
+	case ScheduledEventRunProfile:
+		if profileID != -1 {
+			query.SetProfileID(profileID)
+		}
+	}
+
 	return query.Save(context.Background())
 }
 
 // UpdateScheduledEvent updates the definition of a scheduled event. A previously
 // defined recurrence or single date is replaced by the new values.
-func (m *Model) UpdateScheduledEvent(id int, description, eventType, cron string, when *time.Time) error {
+func (m *Model) UpdateScheduledEvent(id int, description, eventType, cron string, when *time.Time, pkg ScheduledEventPackage, profileID int) error {
 	query := m.Client.ScheduledEvent.UpdateOneID(id).
 		SetDescription(description).
 		SetType(eventType)
@@ -84,6 +124,31 @@ func (m *Model) UpdateScheduledEvent(id int, description, eventType, cron string
 		query = query.SetWhen(*when)
 	} else {
 		query = query.ClearWhen()
+	}
+
+	switch eventType {
+	case ScheduledEventInstallPackage, ScheduledEventUpdatePackage:
+		query.SetPackageID(pkg.ID).SetPackageName(pkg.Name).ClearProfile()
+		if pkg.Branch != "" {
+			query.SetPackageBranch(pkg.Branch)
+		} else {
+			query.ClearPackageBranch()
+		}
+		if pkg.BrewType != "" {
+			query.SetPackageBrewType(pkg.BrewType)
+		} else {
+			query.ClearPackageBrewType()
+		}
+		query.SetPackageVerified(pkg.Verified)
+	case ScheduledEventRunProfile:
+		query.ClearPackageID().ClearPackageName().ClearPackageBranch().ClearPackageBrewType().SetPackageVerified(false)
+		if profileID != -1 {
+			query.SetProfileID(profileID)
+		} else {
+			query.ClearProfile()
+		}
+	default:
+		query.ClearPackageID().ClearPackageName().ClearPackageBranch().ClearPackageBrewType().SetPackageVerified(false).ClearProfile()
 	}
 
 	return query.Exec(context.Background())
@@ -128,4 +193,27 @@ func (m *Model) GetScheduledEventAgents(tenantID, siteID int) ([]*ent.Agent, err
 	}
 
 	return query.All(context.Background())
+}
+
+// GetScheduledEventProfiles returns the profiles whose tasks an event of a tenant
+// (optionally of one site) can reference: the organization's and its sites' profiles
+func (m *Model) GetScheduledEventProfiles(tenantID, siteID int) ([]*ent.Profile, error) {
+	query := m.Client.Profile.Query().Where(profile.HasTenantWith(tenant.ID(tenantID)))
+
+	if siteID != -1 {
+		query = query.Where(
+			profile.Or(
+				profile.Not(profile.HasSite()),
+				profile.HasSiteWith(site.ID(siteID), site.HasTenantWith(tenant.ID(tenantID))),
+			),
+		)
+	}
+
+	return query.WithSite().Order(ent.Asc(profile.FieldName)).All(context.Background())
+}
+
+// GetScheduledEventProfile returns a profile by its id, to check that a scheduled
+// event of a tenant can reference it
+func (m *Model) GetScheduledEventProfile(profileID int) (*ent.Profile, error) {
+	return m.Client.Profile.Query().Where(profile.ID(profileID)).WithSite().WithTenant().Only(context.Background())
 }

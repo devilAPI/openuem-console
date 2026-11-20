@@ -568,6 +568,22 @@ no:
     type_poweroff: "Slå av"
     type_reboot: "Start på nytt"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Installer programvare
+    type_updatepackage: Oppdater programvare
+    type_runprofile: Kjør profiloppgaver
+    package: Programvarepakke
+    package_description: Oppgaven ruller ut denne programvarepakken på alle aktiverte maskiner i organisasjonen (eller området) hver gang den kjører. Maskinene må være tilkoblet, resultatet vises som en utrulling.
+    package_selected: Valgt pakke
+    search_placeholder: Søk etter en programvarepakke etter navn
+    no_packages: Ingen pakke funnet
+    more_packages: "%d flere pakker funnet, avgrens søket for å se dem"
+    profile: Profil
+    profile_select: Velg en profil
+    profile_empty: Ingen profil er tilgjengelig for denne organisasjonen
+    profile_description: Oppgaven ber hver aktivert maskin om å kjøre oppgavene som er definert av denne profilen. Administrer profilene og oppgavene deres i innstillingsdelen.
+    wrong_package: Velg en programvarepakke for denne oppgaven
+    wrong_profile: Velg en profil for denne oppgaven
+    wrong_profile_scope: Profilen tilhører ikke denne organisasjonen
     frequency: "Tidsplan"
     frequency_once: "Én gang"
     frequency_daily: "Daglig"
@@ -1305,6 +1321,8 @@ no:
     title: "Profiladministrasjon"
     description: "Endepunktprofiler lar deg definere en rekke oppgaver som skal brukes på flere endepunkter. Oppgavene inkluderer programvareinstallasjon, administrasjon av lokale brukere og grupper, registeradministrasjon... Klikk på profilens beskrivelse for å redigere definisjonen, og klikk på varselsskiltet for å se hvilke endepunkter som hadde problemer med å bruke profilen"
     no_profiles: "Ingen profiler er funnet for denne spørringen"
+    scope_organization: "Organisasjon"
+    scope_global: "Global"
     add: "Legg til profil"
     confirm_delete: "Bekreft at du vil fjerne denne endepunktprofilen"
     issues_found: "Problemer"

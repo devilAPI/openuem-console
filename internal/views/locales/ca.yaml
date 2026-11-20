@@ -568,6 +568,22 @@ ca:
     type_poweroff: "Apagar"
     type_reboot: "Reiniciar"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Instal·la programari
+    type_updatepackage: Actualitza programari
+    type_runprofile: Executa tasques de perfil
+    package: Paquet de programari
+    package_description: La tasca desplega aquest paquet de programari a tots els equips habilitats de l'organització (o lloc) quan s'executa. Els equips han d'estar connectats, el resultat es mostra com un desplegament.
+    package_selected: Paquet seleccionat
+    search_placeholder: Cerca un paquet de programari pel nom
+    no_packages: No s'ha trobat cap paquet
+    more_packages: "%d paquets més trobats, refina la cerca per veure'ls"
+    profile: Perfil
+    profile_select: Selecciona un perfil
+    profile_empty: No hi ha cap perfil disponible per a aquesta organització
+    profile_description: La tasca demana a cada equip habilitat que executi les tasques definides per aquest perfil. Gestiona els perfils i les seves tasques a la secció de configuració.
+    wrong_package: Tria un paquet de programari per a aquesta tasca
+    wrong_profile: Tria un perfil per a aquesta tasca
+    wrong_profile_scope: El perfil no pertany a aquesta organització
     frequency: "Programació"
     frequency_once: "Una vegada"
     frequency_daily: "Diària"
@@ -1305,6 +1321,8 @@ ca:
     title: "Gestió de perfils"
     description: "Els perfils de punt final permeten definir una sèrie de tasques que s'aplicaran a diversos punts finals. Les tasques inclouen la instal·lació de programari, la gestió d'usuaris i grups locals, la gestió del registre... Feu clic a la descripció del perfil per editar-ne la definició i feu clic a la icona de la columna Estat per veure més informació sobre els punts finals i el resultat de l'execució de les tasques"
     no_profiles: "No s'ha trobat cap perfil per a aquesta consulta"
+    scope_organization: "Organització"
+    scope_global: "Global"
     add: "Afegir perfil"
     confirm_delete: "Confirmeu que voleu eliminar aquest perfil de punt final"
     issues_found: "Problemes"

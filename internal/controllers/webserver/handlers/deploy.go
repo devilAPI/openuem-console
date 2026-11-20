@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/invopop/ctxi18n/i18n"
 	"github.com/labstack/echo/v4"
+	ent "github.com/open-uem/ent"
 	openuem_nats "github.com/open-uem/nats"
 	"github.com/open-uem/openuem-console/internal/models"
 	"github.com/open-uem/openuem-console/internal/views/deploy_views"
@@ -42,23 +44,34 @@ func (h *Handler) DeployAction(c echo.Context, action string) error {
 }
 
 func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
-	var err error
-
 	commonInfo, err := h.GetCommonInfo(c)
 	if err != nil {
 		return err
 	}
 
+	packages, p, f, allSources, itemsPerPage, err := h.findPackages(c, commonInfo)
+	if err != nil {
+		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+	}
+
+	return RenderView(c, deploy_views.SearchPacketResult(action, packages, c, p, f, allSources, itemsPerPage, commonInfo))
+}
+
+// findPackages searches the package catalog with the request's filters: the
+// text to search and the package managers enabled for the organization
+func (h *Handler) findPackages(c echo.Context, commonInfo *partials.CommonInfo) ([]*ent.SoftwarePackage, partials.PaginationAndSort, filters.DeployPackageFilter, []string, int, error) {
+	var err error
+
 	search := c.FormValue("filterByAppName")
 	if search == "" {
-		return RenderError(c, partials.ErrorMessage(i18n.T(c.Request().Context(), "install.search_empty_error"), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, errors.New(i18n.T(c.Request().Context(), "install.search_empty_error"))
 	}
 
 	allSources := []string{}
 
 	useWinget, err := h.Model.GetDefaultUseWinget(commonInfo.TenantID)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, err
 	}
 
 	if useWinget {
@@ -71,7 +84,7 @@ func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
 
 	useFlatpak, err := h.Model.GetDefaultUseFlatpak(commonInfo.TenantID)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, err
 	}
 
 	if useFlatpak {
@@ -80,7 +93,7 @@ func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
 
 	useBrew, err := h.Model.GetDefaultUseBrew(commonInfo.TenantID)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, err
 	}
 
 	if useBrew {
@@ -97,13 +110,13 @@ func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
 
 	if len(filteredSources) == 0 {
 		if useWinget {
-			filteredSources = append(allSources, "winget")
+			filteredSources = append(filteredSources, "winget")
 		}
 		if useFlatpak {
-			filteredSources = append(allSources, "flatpak")
+			filteredSources = append(filteredSources, "flatpak")
 		}
 		if useBrew {
-			filteredSources = append(allSources, "brew")
+			filteredSources = append(filteredSources, "brew")
 		}
 	}
 
@@ -128,15 +141,15 @@ func (h *Handler) SearchPackagesAction(c echo.Context, action string) error {
 
 	packages, err := h.Model.SearchPackages(search, p, f)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, err
 	}
 
 	p.NItems, err = h.Model.CountPackages(search, f)
 	if err != nil {
-		return RenderError(c, partials.ErrorMessage(err.Error(), true))
+		return nil, partials.PaginationAndSort{}, filters.DeployPackageFilter{}, nil, 0, err
 	}
 
-	return RenderView(c, deploy_views.SearchPacketResult(action, packages, c, p, f, allSources, itemsPerPage, commonInfo))
+	return packages, p, f, allSources, itemsPerPage, nil
 }
 
 func (h *Handler) SelectPackageDeployment(c echo.Context) error {

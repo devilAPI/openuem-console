@@ -568,6 +568,22 @@ de:
     type_poweroff: "Herunterfahren"
     type_reboot: "Neustart"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Software installieren
+    type_updatepackage: Software aktualisieren
+    type_runprofile: Profil-Aufgaben ausführen
+    package: Softwarepaket
+    package_description: Die Aufgabe verteilt dieses Softwarepaket bei jedem Lauf auf allen aktivierten Computern der Organisation (bzw. des Standorts). Die Computer müssen verbunden sein, das Ergebnis wird als Bereitstellung angezeigt.
+    package_selected: Ausgewähltes Paket
+    search_placeholder: Softwarepaket nach Namen suchen
+    no_packages: Kein Paket gefunden
+    more_packages: "%d weitere Pakete gefunden, präzisiere die Suche um sie zu sehen"
+    profile: Profil
+    profile_select: Profil auswählen
+    profile_empty: Für diese Organisation ist kein Profil verfügbar
+    profile_description: Die Aufgabe fordert jeden aktivierten Computer auf, die im Profil definierten Aufgaben auszuführen. Profile und ihre Aufgaben werden im Einstellungen-Bereich verwaltet.
+    wrong_package: Wähle ein Softwarepaket für diese Aufgabe
+    wrong_profile: Wähle ein Profil für diese Aufgabe
+    wrong_profile_scope: Das Profil gehört nicht zu dieser Organisation
     frequency: "Zeitplan"
     frequency_once: "Einmalig"
     frequency_daily: "Täglich"
@@ -1305,6 +1321,8 @@ de:
     title: "Profilverwaltung"
     description: "Mit Endpoint-Profilen können Sie eine Reihe von Aufgaben definieren, die auf mehrere Endpoints angewendet werden. Zu den Aufgaben gehören Softwareinstallation, Verwaltung lokaler Benutzer und Gruppen, Registrierungsverwaltung ... Klicken Sie auf die Profilbeschreibung, um deren Definition zu bearbeiten, und klicken Sie auf das Symbol in der Statusspalte, um weitere Informationen zu den Endpoints und zum Ergebnis der Aufgabenausführung anzuzeigen"
     no_profiles: "Für diese Abfrage wurden keine Profile gefunden"
+    scope_organization: "Organisation"
+    scope_global: "Global"
     add: "Profil hinzufügen"
     confirm_delete: "Bestätigen Sie, dass Sie dieses Endpoint-Profil entfernen möchten"
     issues_found: "Probleme"

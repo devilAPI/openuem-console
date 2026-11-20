@@ -568,6 +568,22 @@ en:
     type_poweroff: "Power off"
     type_reboot: "Restart"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Install software
+    type_updatepackage: Update software
+    type_runprofile: Run profile tasks
+    package: Software package
+    package_description: The task deploys this software package on every enabled computer of the organization (or site) when it runs. The computers must be connected, the result is shown as a deployment.
+    package_selected: Selected package
+    search_placeholder: Search a software package by name
+    no_packages: No package found
+    more_packages: "%d more packages were found, refine your search to see them"
+    profile: Profile
+    profile_select: Select a profile
+    profile_empty: No profile is available for this organization
+    profile_description: The task asks every enabled computer to run the tasks defined by this profile. Manage the profiles and their tasks in the Settings section.
+    wrong_package: Choose a software package for this task
+    wrong_profile: Choose a profile for this task
+    wrong_profile_scope: The profile does not belong to this organization
     frequency: "Schedule"
     frequency_once: "Once"
     frequency_daily: "Daily"
@@ -1305,6 +1321,8 @@ en:
     title: "Profile management"
     description: "The endpoint profiles allow you to define a series of tasks that will be applied to several endpoints. The tasks include software installation, local users and groups management, registry management... Click on the profile description to edit its definition and click on the icon in the Status column to see more information about the endpoints and the outcome of task execution"
     no_profiles: "No profiles have been found for this query"
+    scope_organization: "Organization"
+    scope_global: "Global"
     add: "Add profile"
     confirm_delete: "Confirm that you want to remove this endpoint profile"
     issues_found: "Issues"

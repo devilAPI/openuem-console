@@ -568,6 +568,22 @@ fr:
     type_poweroff: "Éteindre"
     type_reboot: "Redémarrer"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Installer un logiciel
+    type_updatepackage: Mettre à jour un logiciel
+    type_runprofile: Exécuter les tâches d'un profil
+    package: Logiciel
+    package_description: La tâche déploie ce logiciel sur tous les ordinateurs activés de l'organisation (ou du site) à chaque exécution. Les ordinateurs doivent être connectés, le résultat est affiché comme un déploiement.
+    package_selected: Logiciel sélectionné
+    search_placeholder: Rechercher un logiciel par nom
+    no_packages: Aucun logiciel trouvé
+    more_packages: "%d logiciels de plus ont été trouvés, affinez votre recherche pour les voir"
+    profile: Profil
+    profile_select: Sélectionnez un profil
+    profile_empty: Aucun profil n'est disponible pour cette organisation
+    profile_description: La tâche demande à chaque ordinateur activé d'exécuter les tâches définies par ce profil. Gérez les profils et leurs tâches dans la section Paramètres.
+    wrong_package: Choisissez un logiciel pour cette tâche
+    wrong_profile: Choisissez un profil pour cette tâche
+    wrong_profile_scope: Le profil n'appartient pas à cette organisation
     frequency: "Planification"
     frequency_once: "Une fois"
     frequency_daily: "Quotidienne"
@@ -1305,6 +1321,8 @@ fr:
     title: "Gestion des profils"
     description: "Les profils de point de terminaison vous permettent de définir une série de tâches qui seront appliquées à plusieurs points de terminaison. Les tâches incluent l'installation de logiciels, la gestion des utilisateurs et groupes locaux, la gestion du registre... Cliquez sur la description du profil pour modifier sa définition et cliquez sur l'icône de la colonne Statut pour voir plus d'informations sur les points de terminaison et le résultat de l'exécution des tâches"
     no_profiles: "Aucun profil n'a été trouvé pour cette requête"
+    scope_organization: "Organisation"
+    scope_global: "Global"
     add: "Ajouter un profil"
     confirm_delete: "Confirmez que vous souhaitez supprimer ce profil de point de terminaison"
     issues_found: "Problèmes"

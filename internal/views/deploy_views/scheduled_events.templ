@@ -2,6 +2,7 @@ package deploy_views
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/invopop/ctxi18n/i18n"
@@ -22,6 +23,12 @@ func scheduledTypeLabel(eventType string) string {
 	switch eventType {
 	case models.ScheduledEventUpdateAll:
 		return "scheduled.type_updateall"
+	case models.ScheduledEventInstallPackage:
+		return "scheduled.type_installpackage"
+	case models.ScheduledEventUpdatePackage:
+		return "scheduled.type_updatepackage"
+	case models.ScheduledEventRunProfile:
+		return "scheduled.type_runprofile"
 	case models.ScheduledEventPowerOff:
 		return "scheduled.type_poweroff"
 	case models.ScheduledEventRestart:
@@ -31,6 +38,93 @@ func scheduledTypeLabel(eventType string) string {
 	default:
 		return "scheduled.type_updateall"
 	}
+}
+
+// scheduledEventTarget returns the target of an install, update or run profile
+// task, to show what the task works with
+func scheduledEventTarget(event *ent.ScheduledEvent) string {
+	switch event.Type {
+	case models.ScheduledEventInstallPackage, models.ScheduledEventUpdatePackage:
+		return event.PackageName
+	case models.ScheduledEventRunProfile:
+		if event.Edges.Profile != nil {
+			return event.Edges.Profile.Name
+		}
+	}
+	return ""
+}
+
+// scheduledEventIsPackageType reports whether a task type deploys a software package
+func scheduledEventIsPackageType(event *ent.ScheduledEvent) bool {
+	return event != nil && (event.Type == models.ScheduledEventInstallPackage || event.Type == models.ScheduledEventUpdatePackage)
+}
+
+// scheduledEventIsProfileType reports whether a task type runs the tasks of a profile
+func scheduledEventIsProfileType(event *ent.ScheduledEvent) bool {
+	return event != nil && event.Type == models.ScheduledEventRunProfile
+}
+
+// scheduledEventPackageID returns the package id the event was configured with
+func scheduledEventPackageID(event *ent.ScheduledEvent) string {
+	if event == nil {
+		return ""
+	}
+	return event.PackageID
+}
+
+// scheduledEventPackageName returns the package name the event was configured with
+func scheduledEventPackageName(event *ent.ScheduledEvent) string {
+	if event == nil {
+		return ""
+	}
+	return event.PackageName
+}
+
+// scheduledEventPackageBranch returns the flatpak branch of the event's package
+func scheduledEventPackageBranch(event *ent.ScheduledEvent) string {
+	if event == nil {
+		return ""
+	}
+	return event.PackageBranch
+}
+
+// scheduledEventPackageBrewType returns the brew type of the event's package
+func scheduledEventPackageBrewType(event *ent.ScheduledEvent) string {
+	if event == nil {
+		return ""
+	}
+	return event.PackageBrewType
+}
+
+// scheduledEventPackageVerified returns whether the event's package is verified
+func scheduledEventPackageVerified(event *ent.ScheduledEvent) string {
+	if event == nil || !event.PackageVerified {
+		return "false"
+	}
+	return "true"
+}
+
+// scheduledEventProfileID returns the id of the event's profile
+func scheduledEventProfileID(event *ent.ScheduledEvent) int {
+	if event == nil || event.Edges.Profile == nil {
+		return -1
+	}
+	return event.Edges.Profile.ID
+}
+
+// scheduledEventProfileSite is the site suffix shown in the profile select
+func scheduledEventProfileSite(profile *ent.Profile) string {
+	names := ""
+	for _, site := range profile.Edges.Site {
+		if names != "" {
+			names += ", "
+		}
+		names += site.Description
+	}
+	if names == "" {
+		return ""
+	}
+	return " (" + names + ")"
 }
 
 // scheduledEventNextRunOf returns the next run of a scheduled event, if its job is registered
@@ -112,7 +206,14 @@ templ ScheduledEvents(c echo.Context, events []*ent.ScheduledEvent, nextRuns []S
 													}
 												</div>
 											</td>
-											<td class="!align-middle">{ i18n.T(ctx, scheduledTypeLabel(event.Type)) }</td>
+											<td class="!align-middle">
+									<div class="flex flex-col">
+										<span>{ i18n.T(ctx, scheduledTypeLabel(event.Type)) }</span>
+										if target := scheduledEventTarget(event); target != "" {
+											<span class="uk-text-small uk-text-muted">{ target }</span>
+										}
+									</div>
+								</td>
 											<td class="!align-middle">
 												<code class="uk-text-small">{ event.Cron }</code>
 												if event.Cron == "" && event.When != nil {
@@ -208,7 +309,7 @@ templ ScheduledEvents(c echo.Context, events []*ent.ScheduledEvent, nextRuns []S
 	</main>
 }
 
-templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency string, commonInfo *partials.CommonInfo) {
+templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency string, profiles []*ent.Profile, commonInfo *partials.CommonInfo) {
 	<title>OpenUEM | { i18n.T(ctx, "Deploy") } | { i18n.T(ctx, actionTitle(TabScheduled)) } </title>
 	@partials.Header(c, []partials.Breadcrumb{{Title: i18n.T(ctx, "Deploy"), Url: string(templ.URL(partials.GetNavigationUrl(commonInfo, "/deploy")))}, {Title: i18n.T(ctx, actionTitle(TabScheduled)), Url: string(templ.URL(partials.GetNavigationUrl(commonInfo, actionPath(TabScheduled))))}}, commonInfo)
 	<main class="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
@@ -257,17 +358,78 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 							</div>
 							<div class="flex flex-col gap-2">
 								<label class="uk-form-label" for="scheduled-type">{ i18n.T(ctx, "scheduled.type") }</label>
-								<select class="uk-select" id="scheduled-type" name="type" required>
-									for _, taskType := range models.ScheduledEventTypes() {
-										<option
-											value={ taskType }
-											selected={ (event != nil && event.Type == taskType) || (event == nil && taskType == models.ScheduledEventUpdateAll) }
-										>
-											{ i18n.T(ctx, scheduledTypeLabel(taskType)) }
-										</option>
-									}
-								</select>
-							</div>
+<select
+							class="uk-select"
+							id="scheduled-type"
+							name="type"
+							required
+							_="on change
+								add .hidden to #scheduled-package
+								add .hidden to #scheduled-profile
+								if my.value is 'installpackage' then
+									remove .hidden from #scheduled-package
+								end
+								if my.value is 'updatepackage' then
+									remove .hidden from #scheduled-package
+								end
+								if my.value is 'runprofile' then
+									remove .hidden from #scheduled-profile
+								end"
+						>
+							for _, taskType := range models.ScheduledEventTypes() {
+								<option
+									value={ taskType }
+									selected={ (event != nil && event.Type == taskType) || (event == nil && taskType == models.ScheduledEventUpdateAll) }
+								>
+									{ i18n.T(ctx, scheduledTypeLabel(taskType)) }
+								</option>
+							}
+						</select>
+					</div>
+					<div id="scheduled-package" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsPackageType(event)) }>
+						<label class="uk-form-label" for="scheduled-package-search">{ i18n.T(ctx, "scheduled.package") }</label>
+						<input
+							type="text"
+							id="scheduled-package-search"
+							name="filterByAppName"
+							autocomplete="off"
+							placeholder={ i18n.T(ctx, "scheduled.search_placeholder") }
+							hx-get={ scheduledEventsPath("/searchpackages", commonInfo) }
+							hx-vals={ `{"pageSize": "25"}` }
+							hx-trigger="input changed delay:500ms from my"
+							hx-target="#scheduled-package-results"
+							hx-swap="innerHTML"
+						/>
+						<input type="hidden" id="packageId" name="packageId" value={ scheduledEventPackageID(event) }/>
+						<input type="hidden" id="packageName" name="packageName" value={ scheduledEventPackageName(event) }/>
+						<input type="hidden" id="packageBranch" name="packageBranch" value={ scheduledEventPackageBranch(event) }/>
+						<input type="hidden" id="packageBrewType" name="packageBrewType" value={ scheduledEventPackageBrewType(event) }/>
+						<input type="hidden" id="packageVerified" name="packageVerified" value={ scheduledEventPackageVerified(event) }/>
+						<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.package_description") }</p>
+						if scheduledEventIsPackageType(event) {
+							<p class="uk-text-small">
+								{ i18n.T(ctx, "scheduled.package_selected") }: <span class="uk-text-bolder" id="scheduled-package-selected">{ scheduledEventPackageName(event) }</span>
+								<code class="uk-text-small">({ scheduledEventPackageID(event) })</code>
+							</p>
+						}
+						<div id="scheduled-package-results" class="uk-flex uk-flex-column gap-1"></div>
+					</div>
+					<div id="scheduled-profile" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsProfileType(event)) }>
+						<label class="uk-form-label" for="scheduled-profile">{ i18n.T(ctx, "scheduled.profile") }</label>
+						if len(profiles) == 0 {
+							<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_empty") }</p>
+						} else {
+							<select class="uk-select" id="scheduled-profile" name="profileId" required>
+								<option value="">{ i18n.T(ctx, "scheduled.profile_select") }</option>
+								for _, profile := range profiles {
+									<option value={ fmt.Sprintf("%d", profile.ID) } selected={ scheduledEventProfileID(event) == profile.ID }>
+										{ profile.Name + scheduledEventProfileSite(profile) }
+									</option>
+								}
+							</select>
+						}
+						<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.profile_description") }</p>
+					</div>
 							<div class="flex flex-col gap-2">
 								<label class="uk-form-label" for="scheduled-frequency">{ i18n.T(ctx, "scheduled.frequency") }</label>
 								<select
@@ -375,4 +537,41 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 			</div>
 		</div>
 	</main>
+}
+
+// ScheduledEventPackagesResult renders the packages found by the search of the
+// package picker of the scheduled task form
+templ ScheduledEventPackagesResult(c echo.Context, packages []*ent.SoftwarePackage, p partials.PaginationAndSort, commonInfo *partials.CommonInfo) {
+	if len(packages) == 0 {
+		<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.no_packages") }</p>
+	} else {
+		if p.NItems > len(packages) {
+			<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.more_packages", p.NItems-len(packages)) }</p>
+		}
+		for _, pkg := range packages {
+			<label class="uk-card uk-card-default uk-card-small uk-card-body !p-2 cursor-pointer flex items-center gap-2">
+				<input
+					type="radio"
+					name="scheduledEventPackageChoice"
+					class="uk-radio"
+					value={ pkg.PackageID }
+					data-name={ pkg.Name }
+					data-branch={ pkg.Branch }
+					data-brewtype={ pkg.BrewType }
+					data-verified={ strconv.FormatBool(pkg.Verified) }
+					_="on change
+						set #packageId.value to my.value
+						set #packageName.value to my.getAttribute('data-name')
+						set #packageBranch.value to my.getAttribute('data-branch')
+						set #packageBrewType.value to my.getAttribute('data-brewtype')
+						set #packageVerified.value to my.getAttribute('data-verified')
+						set #scheduled-package-selected.innerHTML to my.getAttribute('data-name')"
+				/>
+				<div class="flex flex-col">
+					<span class="uk-text-small uk-text-bolder">{ pkg.Name }</span>
+					<span class="uk-text-small uk-text-muted">{ pkg.PackageID } · { pkg.Source }</span>
+				</div>
+			</label>
+		}
+	}
 }

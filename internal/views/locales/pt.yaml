@@ -568,6 +568,22 @@ pt:
     type_poweroff: "Desligar"
     type_reboot: "Reiniciar"
     type_wakeonlan: "Wake on LAN"
+    type_installpackage: Instalar software
+    type_updatepackage: Atualizar software
+    type_runprofile: Executar tarefas de perfil
+    package: Pacote de software
+    package_description: A tarefa implanta este pacote de software em todos os computadores ativados da organização (ou site) quando é executada. Os computadores devem estar ligados, o resultado é mostrado como uma implantação.
+    package_selected: Pacote selecionado
+    search_placeholder: Pesquisar um pacote de software por nome
+    no_packages: Nenhum pacote encontrado
+    more_packages: "%d pacotes mais encontrados, refine a pesquisa para os ver"
+    profile: Perfil
+    profile_select: Selecione um perfil
+    profile_empty: Nenhum perfil disponível para esta organização
+    profile_description: A tarefa pede a cada computador ativado que execute as tarefas definidas por este perfil. Gira os perfis e as suas tarefas na secção de definições.
+    wrong_package: Escolha um pacote de software para esta tarefa
+    wrong_profile: Escolha um perfil para esta tarefa
+    wrong_profile_scope: O perfil não pertence a esta organização
     frequency: "Agendamento"
     frequency_once: "Uma vez"
     frequency_daily: "Diária"
@@ -1305,6 +1321,8 @@ pt:
     title: "Gerenciamento de perfis"
     description: "Os perfis de endpoint permitem definir uma série de tarefas que serão aplicadas a vários endpoints. As tarefas incluem instalação de software, gerenciamento de usuários e grupos locais, gerenciamento de registro... Clique na descrição do perfil para editar sua definição e clique no ícone na coluna Status para ver mais informações sobre os endpoints e o resultado da execução das tarefas"
     no_profiles: "Nenhum perfil foi encontrado para esta consulta"
+    scope_organization: "Organização"
+    scope_global: "Global"
     add: "Adicionar perfil"
     confirm_delete: "Confirme que deseja remover este perfil de endpoint"
     issues_found: "Problemas encontrados"
