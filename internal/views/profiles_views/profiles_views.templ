@@ -74,6 +74,13 @@ templ Profiles(c echo.Context, p partials.PaginationAndSort, profiles []*ent.Pro
 										hx-target="#main"
 										hx-swap="outerHTML"
 									>{ profile.Name }</a>
+								if profileSiteNames(profile) != "" {
+						<span class="uk-text-small uk-text-muted block">{ profileSiteNames(profile) }</span>
+					} else if profile.Edges.Tenant != nil {
+									<span class="uk-text-small uk-text-muted block">{ i18n.T(ctx, "profiles.scope_organization") }</span>
+								} else {
+									<span class="uk-text-small uk-text-muted block">{ i18n.T(ctx, "profiles.scope_global") }</span>
+								}
 								</td>
 								<td class="!align-middle">
 									if  profile.Disabled {
@@ -220,6 +227,19 @@ templ ShowAppliedToNone() {
 			{ i18n.T(ctx, "profiles.no_endpoints") }
 		</span>
 	</div>
+}
+
+
+// profileSiteNames returns the sites a profile belongs to, to show where it applies
+func profileSiteNames(profile *ent.Profile) string {
+	names := ""
+	for _, site := range profile.Edges.Site {
+		if names != "" {
+			names += ", "
+		}
+		names += site.Description
+	}
+	return names
 }
 
 func profileHasErrors(issues []*ent.ProfileIssue) bool {

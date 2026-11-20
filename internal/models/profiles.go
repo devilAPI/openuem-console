@@ -31,7 +31,8 @@ func (m *Model) CountAllProfiles(c *partials.CommonInfo) (int, error) {
 		query = query.Where(profile.And(profile.Not(profile.HasSite()), profile.Not(profile.HasTenant())))
 	} else {
 		if siteID == -1 {
-			query = query.Where(profile.HasTenantWith(tenant.ID(tenantID)), profile.Not(profile.HasSite()))
+			// All sites: the profiles of the organization, the tenant's own and every site's
+			query = query.Where(profile.HasTenantWith(tenant.ID(tenantID)))
 		} else {
 			query = query.Where(profile.HasSiteWith(site.ID(siteID), site.HasTenantWith(tenant.ID(tenantID))))
 		}
@@ -44,7 +45,7 @@ func (m *Model) GetProfilesByPage(p partials.PaginationAndSort, c *partials.Comm
 	var err error
 	var profiles []*ent.Profile
 
-	query := m.Client.Profile.Query().WithTasks().WithTags().WithIssues(func(q *ent.ProfileIssueQuery) {
+	query := m.Client.Profile.Query().WithTenant().WithSite().WithTasks().WithTags().WithIssues(func(q *ent.ProfileIssueQuery) {
 		q.WithTasksreports(func(q *ent.TaskReportQuery) { q.WithTask().All(context.Background()) }).All(context.Background())
 	}).Limit(p.PageSize).Offset((p.CurrentPage - 1) * p.PageSize)
 
@@ -62,7 +63,8 @@ func (m *Model) GetProfilesByPage(p partials.PaginationAndSort, c *partials.Comm
 		query = query.Where(profile.And(profile.Not(profile.HasSite()), profile.Not(profile.HasTenant())))
 	} else {
 		if siteID == -1 {
-			query = query.Where(profile.HasTenantWith(tenant.ID(tenantID)), profile.Not(profile.HasSite()))
+			// All sites: the profiles of the organization, the tenant's own and every site's
+			query = query.Where(profile.HasTenantWith(tenant.ID(tenantID)))
 		} else {
 			query = query.Where(profile.HasSiteWith(site.ID(siteID), site.HasTenantWith(tenant.ID(tenantID))))
 		}
