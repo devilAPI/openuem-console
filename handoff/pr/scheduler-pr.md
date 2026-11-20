@@ -1,7 +1,7 @@
 # Scheduler PR body (open-uem/openuem-console, head: devilAPI:scheduled-tasks)
 
-Related to open-uem/openuem-console#ISSUE (feature request: scheduled tasks).
-Depends on #499 (the code sits on top of that branch's features; the tab reuses its bulk update queueing).
+Related to open-uem/openuem-console#514 (feature request: scheduled tasks).
+Depends on #499 (the code sits on top of that branch's features; the tab reuses its bulk update queueing) and on open-uem/ent#56 (the `scheduled_event` schema, pinned through `devilAPI/ent` until it lands).
 
 ## Summary
 

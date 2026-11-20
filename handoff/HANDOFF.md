@@ -63,7 +63,7 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 |---|---|
 | `feature/bulk-software-updates` | Development history. **The install scripts build these**, so this is what runs on the test server. |
 | `software-updates` | **PR branch** (#499), squashed (2026-11-20) from one commit per feature step into three commits (features, fixes, dashboard), on top of upstream `main`. Its tree is unchanged.
-| `scheduled-tasks` | **PR branch** for the scheduler (item 6): three commits on top of `software-updates`' tree plus the cherry-picked scheduler commit of the feature branch. |
+| `scheduled-tasks` | **PR branch** for the scheduler (#515): the four `software-updates` commits plus the cherry-picked scheduler commits of the feature branch, squashed into one. |
 | `scheduled-events` (ent repo) | The `scheduled_event` schema on a fork of `open-uem/ent` (`devilAPI/ent`), to be contributed upstream. |
 | `remove-task-uploads` | Removal of the MSI task upload (item 3). **Merged** into the feature branches and added as a commit to the PR branches; the branch can be deleted. |
 | `install-script` (console repo only) | Install scripts and this handoff |
@@ -75,8 +75,8 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 | nats | `d9b855a` | `b3a4794` | #24 |
 | openuem-agent | `a53b63b` | `2487602` | #216 |
 | openuem-console | `d18fe9e` (scheduler) + `e9baa49` (status route fix) | `73baba3` = squash `d9e1794` + status route fix | #499 (issue #498) |
-| openuem-console `scheduled-tasks` | – | `f6c2ad9` | scheduler, not opened yet (issue draft in `pr/scheduler-issue.md`) |
-| openuem-ent | – | `1b23ef3` (`scheduled-events`) | schema addition, not opened yet |
+| openuem-console `scheduled-tasks` | – | `f6c2ad9` | #515 (issue #514) |
+| openuem-ent | – | `1b23ef3` (`scheduled-events`) | #56 |
 | openuem-cert-manager | – | `626b464` | #17 |
 | openuem-worker | – | `826d9d0` | not opened yet |
 | install-script (console repo) | | this commit | – |
@@ -145,8 +145,8 @@ The worker only reads the catalog that the console fills.
 
 The scheduler PR depends on its own pieces, besides the console PR #499:
 
-1. `open-uem/ent`: the `scheduled_event` schema (until then: the `devilAPI/ent` pin)
-2. console `scheduled-tasks` (issue draft in `pr/scheduler-issue.md`, PR body in `pr/scheduler-pr.md`)
+1. `open-uem/ent` #56: the `scheduled_event` schema (until then: the `devilAPI/ent` pin)
+2. console `scheduled-tasks` #515 (issue #514, PR body in `pr/scheduler-pr.md`)
 
 ## 3. How it works
 
