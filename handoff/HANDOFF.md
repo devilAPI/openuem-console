@@ -74,8 +74,8 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 |---|---|---|---|
 | nats | `d9b855a` | `b3a4794` | #24 |
 | openuem-agent | `a53b63b` | `2487602` | #216 |
-| openuem-console | `5c6a762` | `d9e1794` (squash of 25 commits) | #499 (issue #498) |
-| openuem-console `scheduled-tasks` | – | `37923c4` | scheduler, not opened yet (issue draft in `pr/scheduler-issue.md`) |
+| openuem-console | `d18fe9e` (scheduler) + `e9baa49` (status route fix) | `73baba3` = squash `d9e1794` + status route fix | #499 (issue #498) |
+| openuem-console `scheduled-tasks` | – | `f6c2ad9` | scheduler, not opened yet (issue draft in `pr/scheduler-issue.md`) |
 | openuem-ent | – | `1b23ef3` (`scheduled-events`) | schema addition, not opened yet |
 | openuem-cert-manager | – | `626b464` | #17 |
 | openuem-worker | – | `826d9d0` | not opened yet |
@@ -109,7 +109,9 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `d9e1794` dashboard statistics of the fork's features (deployments by status, library packages found and marked with the OpenUEM badge, updates-needed pie with tooltips and the needs-updates counter)
   - the same steps exist per-feature-commit in the history of the feature branch; the dashboard commits there are `a5964e1`…`7dd965d` and the scheduler is `5c6a762`
 - **console `scheduled-tasks`** (scheduler PR branch):
-  - `37923c4` scheduled tasks (cron and one-time, four task types, persistence with the devilAPI/ent pin) — equals `5c6a762` of the feature branch
+  - the scheduler squashed into one commit on top of the four software-updates commits; feature branch equivalents: `5c6a762` + fixes `05fd8df`, `189ffa2`, `8d1fe7b`, `01aa7e7`, `d18fe9e`
+- **console** (both PR branches):
+  - `73baba3` the agent status route is registered on the tenant and global mounts too (`e9baa49` on the feature branch): the online/offline badge polls `/computers/<uuid>/status` every minute, and on pages opened with no site in the URL the route didn't exist, so the error page (served as HTTP 200 by the console's error handler) was swapped into the page after a minute of idling — the user saw it as a spontaneous "404 | Page Not Found" on a computer's Software updates page
 - **ent (devilAPI/ent, `scheduled-events`):**
   - `1b23ef3` the `scheduled_event` schema (cron/when, enabled, last run/result, tenant edge required, optional site edge with cascade delete)
 - **worker:**
@@ -339,6 +341,17 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
 - PowerShell tasks;
 - the OpenUEM CA added to the trusted roots;
 - ports 1323 and 8000 reachable.
+
+**Scheduled tasks, 2026-11-20, on the server VM (Playwright) and the Windows VM:**
+- the Scheduled tasks tab, creating tasks of every type and frequency (daily, weekly with weekday, monthly with day of the month, one-time in the future, custom cron), editing them with the frequency preselected, deleting with confirm;
+- toggling off clears the next run and shows "disabled", toggling on registers the job again and shows the next run;
+- run now answers immediately and records the English summary: an update-all run reported "1 computer(s) started..., 3 will update when they connect", a Wake on LAN run "4 Wake on LAN packet(s) were sent successfully";
+- a one-time task fired at its exact minute, recorded the result and disabled itself; its next run disappeared from the list;
+- after `docker restart openuem-console` the instance is promoted again and the jobs are re-registered from the database;
+- the description form's hyperscript shows every frequency's fields (the one-line chained ifs only ran partly, the block form used elsewhere in the console works);
+- a one-time date is interpreted in the **console's local time** — the VM runs UTC, a browser in UTC+1 must add offsets accordingly (verified with a server-time target);
+- **the status 404 fix**: `/computers/<uuid>/status` (the badge poll, every minute) now answers on all three mounts — a computer page left idle no longer turns into the error page;
+- **the installer's `/OVERWRITE /ORG=3 /SITE=3`**: the Windows VM's agent, already registered in organization 2, got a fresh UUID and registered as a NEW computer (waiting for admission) in organization 3, site 3 (`Third Org` created in the console for the test); the old computer entry stays in the console until it's deleted. Caution: the server VM keeps its own copy of `install-openuem-agent-fork.ps1` next to the script, which wins over the repository — sync it (`scp install-openuem-agent-fork.ps1 root@server:/root/`) after changes, or the setup exe bundles the stale worker.
 
 **On Windows 11 VMs, 2026-11-18 (unattended run):** the whole `TEST_PLAN.md`, with the
 server and agent installed by the install scripts. Everything passed after the fixes
