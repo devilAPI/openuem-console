@@ -76,7 +76,7 @@ func (h *Handler) RegisterScheduledEvent(event *ent.ScheduledEvent) {
 	case event.Cron != "":
 		definition = gocron.CronJob(event.Cron, false)
 		options = append(options, gocron.WithSingletonMode(gocron.LimitModeReschedule))
-	case !event.When.IsZero():
+	case event.When != nil:
 		if event.When.Before(time.Now()) {
 			log.Printf("[INFO]: the scheduled task %q would run in the past, so it has been disabled", event.Description)
 			if err := h.Model.SetScheduledEventEnabled(event.ID, false); err != nil {

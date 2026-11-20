@@ -132,7 +132,7 @@ templ ScheduledEvents(c echo.Context, events []*ent.ScheduledEvent, nextRuns []S
 											</td>
 											<td class="!align-middle">
 												<span class="uk-text-small">
-													if event.LastRun.IsZero() {
+													if event.LastRun == nil || event.LastRun.IsZero() {
 														{ i18n.T(ctx, "scheduled.never") }
 													} else {
 														{ commonInfo.Translator.FmtDateMedium(event.LastRun.Local()) + " " + commonInfo.Translator.FmtTimeShort(event.LastRun.Local()) }
@@ -140,7 +140,7 @@ templ ScheduledEvents(c echo.Context, events []*ent.ScheduledEvent, nextRuns []S
 												</span>
 											</td>
 											<td class="!align-middle">
-												if !event.LastRun.IsZero() {
+												if event.LastRun != nil && !event.LastRun.IsZero() {
 													if event.LastRunFailed {
 														<span class="uk-text-small text-red-600">{ event.LastResult }</span>
 													} else {
@@ -276,7 +276,7 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 									name="frequency"
 									required
 									_="on change
-										hide #schedule-once, #schedule-time, #schedule-weekday, #schedule-monthday, #schedule-cron
+										hide #schedule-once then hide #schedule-time then hide #schedule-weekday then hide #schedule-monthday then hide #schedule-cron
 										if my.value == 'once' then show #schedule-once
 										if my.value == 'daily' then show #schedule-time
 										if my.value == 'weekly' then show #schedule-time then show #schedule-weekday
