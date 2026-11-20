@@ -407,12 +407,10 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 								<input type="hidden" id="packageBrewType" name="packageBrewType" value={ scheduledEventPackageBrewType(event) }/>
 								<input type="hidden" id="packageVerified" name="packageVerified" value={ scheduledEventPackageVerified(event) }/>
 								<p class="uk-text-small uk-text-muted">{ i18n.T(ctx, "scheduled.package_description") }</p>
-								if scheduledEventIsPackageType(event) {
-									<p class="uk-text-small">
-										{ i18n.T(ctx, "scheduled.package_selected") }: <span class="uk-text-bolder" id="scheduled-package-selected">{ scheduledEventPackageName(event) }</span>
-										<code class="uk-text-small">({ scheduledEventPackageID(event) })</code>
-									</p>
-								}
+								<p class="uk-text-small">
+									{ i18n.T(ctx, "scheduled.package_selected") }: <span class="uk-text-bolder" id="scheduled-package-selected">{ scheduledEventPackageName(event) }</span>
+									<code class="uk-text-small">({ scheduledEventPackageID(event) })</code>
+								</p>
 								<div id="scheduled-package-results" class="uk-flex uk-flex-column gap-1"></div>
 							</div>
 							<div id="scheduled-profile" class={ "flex flex-col gap-2", templ.KV("hidden", !scheduledEventIsProfileType(event)) }>
