@@ -98,9 +98,22 @@ func (h *Handler) StartScheduledEventsJob() {
 		return
 	}
 
+	enabled := map[int]bool{}
 	for _, event := range events {
+		enabled[event.ID] = true
 		h.RegisterScheduledEvent(event)
 	}
+
+	// Tasks disabled or deleted since the last reconciliation, on this or
+	// another console instance, are unregistered: a follower's request can't
+	// touch the leader's jobs
+	h.scheduledEventMu.Lock()
+	for eventID := range h.scheduledEventJobs {
+		if !enabled[eventID] {
+			h.UnregisterScheduledEvent(eventID)
+		}
+	}
+	h.scheduledEventMu.Unlock()
 }
 
 // RegisterScheduledEvent adds the job of a scheduled event to the task scheduler.
@@ -118,9 +131,10 @@ func (h *Handler) RegisterScheduledEvent(event *ent.ScheduledEvent) {
 		return
 	}
 
-	// A job may already exist for this event, e.g. after editing it
+	// A job may already exist for this event, e.g. after editing it. The
+	// running guard of a run in flight is left alone: it is cleaned up by the
+	// run itself, and the reconciliation could delete it any moment
 	h.UnregisterScheduledEvent(event.ID)
-	delete(h.scheduledEventRunning, event.ID)
 
 	var definition gocron.JobDefinition
 	var options []gocron.JobOption
