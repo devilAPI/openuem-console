@@ -226,11 +226,14 @@ curl -fsSL https://raw.githubusercontent.com/devilAPI/openuem-console/install-sc
   them to `{tmp}` and runs the script with `-FilesDir`, so no SSH and no internet access are
   needed on the computers. Internally the script runs the official setup with the official
   flags (see above) and then swaps the binary.
-- **Always silent:** started without `/VERYSILENT` it re-launches itself with
-  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` and exits with the child's exit code
-  (`ExitProcess`); in the silent run the worker's code is returned via
-  `GetCustomSetupExitCode`. Exit code 0 on success, 1 on failure. Runs as administrator or
-  SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
+- **Wizard by default (2026-11-20, like the official setup):** started without switches it
+  shows Inno's setup wizard (welcome, directory, installing, finished) and runs the worker
+  after the install step; a failed installation is reported in a message box. Silent
+  installs use Inno's switches, e.g. `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, and return
+  the worker's code via `GetCustomSetupExitCode`. Exit code 0 on success, 1 on failure. Runs
+  as administrator or SYSTEM (GPO startup script, Intune Win32 app, PDQ and similar).
+  *Before 2026-11-20 it forced itself silent:* it ran the worker in `InitializeSetup` before
+  any wizard form and exited with `ExitProcess`.
 - **Install and update:** a computer without the agent gets the official agent plus the
   fork's binary; a computer with the agent gets the official installer re-run plus the new binary.
 - **Settings baked in:** `SERVER_IP`, the domain, the NATS port and `AGENT_SFTP_PORT`/`AGENT_VNC_PORT`.
@@ -377,6 +380,14 @@ Asked whether the build is ready for a live system, this round did:
 - **Two independent code reviews** (console and agent, security and correctness, with fuzzing of the installer parsers and race tests). Every finding is fixed except the documented limitations below.
 - **Two upstream bugs that the fork makes more visible, fixed:** installs recorded as successful when winget failed, and duplicate deployments stuck "In Progress".
 - **Upgrade of an existing official installation:** the published images (console, workers) with an admitted official 0.11.0 agent, a profile with a task and a deployment were upgraded with `install-openuem-fork.sh`. All 41 tables kept their rows, the official agent kept working with the fork console, the profile is shown with its task, and the rollback (`rm compose.override.yml && docker compose up -d`) to the published images works on the migrated database.
+
+**Setup wizard round (2026-11-20):** `fd4b182` on `install-script`. On the Windows 11 VM as SYSTEM:
+without switches the setup and its Inno `.tmp` engine sat waiting for 45 s without touching the agent
+(the install log unchanged, the service untouched) — the wizard waits for the user, it no longer
+self-installs; with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` the update ran through: exit code 0,
+the service running, the log ending in "The fork's agent is installed, the official binary was saved
+as ...exe.official". (The wizard's window can't be read from a headless session; with an interactive
+logon the window shows like the official setup's.)
 
 **Dashboard round 2 (2026-11-20, updates needed pie and tooltips):** `0e9b68a`+`7dd965d`. Verified live like the round
 below: the new pie shows `No updates=1` (the online Windows 11 VM, whose winget is up to date) with the center 1, because only
