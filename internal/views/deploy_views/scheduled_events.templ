@@ -276,14 +276,28 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 									name="frequency"
 									required
 									_="on change
-										add .hidden to #schedule-once then add .hidden to #schedule-time then add .hidden to #schedule-weekday then add .hidden to #schedule-monthday then add .hidden to #schedule-cron
-										if my.value == 'once' then remove .hidden from #schedule-once
-										if my.value == 'daily' then remove .hidden from #schedule-time
-										if my.value == 'weekly' then remove .hidden from #schedule-time
-										if my.value == 'weekly' then remove .hidden from #schedule-weekday
-										if my.value == 'monthly' then remove .hidden from #schedule-time
-										if my.value == 'monthly' then remove .hidden from #schedule-monthday
-										if my.value == 'custom' then remove .hidden from #schedule-cron"
+										add .hidden to #schedule-once
+										add .hidden to #schedule-time
+										add .hidden to #schedule-weekday
+										add .hidden to #schedule-monthday
+										add .hidden to #schedule-cron
+										if my.value is 'once' then
+											remove .hidden from #schedule-once
+										end
+										if my.value is 'daily' then
+											remove .hidden from #schedule-time
+										end
+										if my.value is 'weekly' then
+											remove .hidden from #schedule-time
+											remove .hidden from #schedule-weekday
+										end
+										if my.value is 'monthly' then
+											remove .hidden from #schedule-time
+											remove .hidden from #schedule-monthday
+										end
+										if my.value is 'custom' then
+											remove .hidden from #schedule-cron
+										end"
 								>
 									for _, f := range []string{FrequencyOnce, FrequencyDaily, FrequencyWeekly, FrequencyMonthly, FrequencyCustom} {
 										<option value={ f } selected={ frequency == f }>{ i18n.T(ctx, "scheduled.frequency_"+f) }</option>
