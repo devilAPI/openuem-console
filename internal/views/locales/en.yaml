@@ -590,6 +590,7 @@ en:
     from_installer: "From the installer"
     installer_type: "Installer type (EXE only)"
     type_detect: "Detect"
+    package_badge: "Package from the software library"
     type_msi: "MSI"
     type_msix: "MSIX"
     type_exe: "Other setup program"

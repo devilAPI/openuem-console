@@ -590,6 +590,7 @@ no:
     from_installer: "Fra installasjonsprogrammet"
     installer_type: "Installasjonstype (bare EXE)"
     type_detect: "Oppdag"
+    package_badge: "Pakke fra programvarebiblioteket"
     type_msi: "MSI"
     type_msix: "MSIX"
     type_exe: "Annet installasjonsprogram"

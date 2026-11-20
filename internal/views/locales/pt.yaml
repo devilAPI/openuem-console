@@ -590,6 +590,7 @@ pt:
     from_installer: "Do instalador"
     installer_type: "Tipo de instalador (apenas EXE)"
     type_detect: "Detetar"
+    package_badge: "Pacote da biblioteca de software"
     type_msi: "MSI"
     type_msix: "MSIX"
     type_exe: "Outro programa de instalação"

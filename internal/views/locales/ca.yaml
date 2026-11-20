@@ -590,6 +590,7 @@ ca:
     from_installer: "De l'instal·lador"
     installer_type: "Tipus d'instal·lador (només EXE)"
     type_detect: "Detectar"
+    package_badge: "Paquet de la biblioteca de programari"
     type_msi: "MSI"
     type_msix: "MSIX"
     type_exe: "Un altre programa d'instal·lació"
