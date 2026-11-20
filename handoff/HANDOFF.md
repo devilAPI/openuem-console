@@ -33,7 +33,10 @@ Upstream OpenUEM could only update one package on one computer at a time. The fo
 3. ~~MSI upload for profile tasks~~ (`/agent-files` on the auth server): **removed**, superseded by 2. once a profile installed a library package on Windows (`remove-task-uploads` is merged).
 4. **Dashboard statistics of the fork's features** (Console → Dashboard). A second row of pie charts shows:
    - **Deployments by status**, from the database: installed, failed or waiting for the agent's result (`CountDeploymentsByStatus`). Covers the bulk installs and the library packages like the existing `NDeployments` counter does.
-   - **Software library packages by installer type** (MSI, Inno Setup, NSIS, WiX bundle, other setup program, MSIX), plus a new `Packages in the software library` counter row that links to the software library.
+   - **Computers by software updates needed**, in four buckets: no updates, under five, five to twenty and more than twenty. Counting the updates runs the computers' package managers, which takes minutes on Windows, so the console counts them in the background (`available_updates.go`: once when the console starts, then hourly; concurrency 16, 10 min per computer) and the dashboard only reads the count. Computers that don't answer aren't counted.
+   - a new `Computers that need software updates` counter row links to the Deploy update status page, and `Packages in the software library` counter row links to the software library.
+   - **every pie chart card shows a tooltip** when it's hovered (`Chart` in `chart.templ`, the `charts.tip_*` keys), explaining what the chart is based on.
+   - the software library packages by installer type pie **was removed again** (2026-11-20) on request.
    - **Computers by last software update run.** Like the update status page, the console asks every agent (except the waiting ones) `agent.listpackageupdates` with `{"statusonly":true}` (20 s page render at the most, concurrency 16, 5 s per agent) and classifies it: finished without failures, with failures, running, never ran an update, or no answer (offline or an agent without support). Without a NATS connection every computer counts as not answering.
 5. **Smaller fixes along the way:**
    - the console Dockerfile (Go toolchain, `$GOPATH`) and the worker Dockerfile;
@@ -62,7 +65,7 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 |---|---|---|---|
 | nats | `d9b855a` | `b3a4794` | #24 |
 | openuem-agent | `a53b63b` | `2487602` | #216 |
-| openuem-console | `2e6852d` | `a5964e1` | #499 (issue #498) |
+| openuem-console | `7dd965d` | `83ca839` | #499 (issue #498) |
 | openuem-cert-manager | – | `626b464` | #17 |
 | openuem-worker | – | `826d9d0` | not opened yet |
 | install-script (console repo) | | this commit | – |
@@ -111,6 +114,8 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `d2f0be1` concurrent install requests saved one at a time
   - `1030b44` no second queued request while one is waiting
   - `a5964e1` dashboard statistics of the fork's features (`2e6852d` on the feature branch; deployments by status, library by installer type, computers by last update run; translations in all seven locales)
+  - `99cf825` the software library's packages are found and marked (OpenUEM badge) on the computer pages' Deploy SW search and deployments (`c34ca37` on the feature branch)
+  - `83ca839` the updates-needed pie replaces the installer type pie, chart tooltips, and the needs-updates counter; the console counts the needed updates hourly (`0e9b68a` + `7dd965d` on the feature branch)
 - **worker:**
   - `c6980f8` profile tasks use the source `OpenUEM` for library packages
   - `826d9d0` Dockerfile fix
@@ -372,6 +377,11 @@ Asked whether the build is ready for a live system, this round did:
 - **Two independent code reviews** (console and agent, security and correctness, with fuzzing of the installer parsers and race tests). Every finding is fixed except the documented limitations below.
 - **Two upstream bugs that the fork makes more visible, fixed:** installs recorded as successful when winget failed, and duplicate deployments stuck "In Progress".
 - **Upgrade of an existing official installation:** the published images (console, workers) with an admitted official 0.11.0 agent, a profile with a task and a deployment were upgraded with `install-openuem-fork.sh`. All 41 tables kept their rows, the official agent kept working with the fork console, the profile is shown with its task, and the rollback (`rm compose.override.yml && docker compose up -d`) to the published images works on the migrated database.
+
+**Dashboard round 2 (2026-11-20, updates needed pie and tooltips):** `0e9b68a`+`7dd965d`. Verified live like the round
+below: the new pie shows `No updates=1` (the online Windows 11 VM, whose winget is up to date) with the center 1, because only
+computers that answer the hourly count are counted; the hover tooltips of all six pie cards appear; the
+"Computers that need software updates" counter row (0) links to the Deploy update status page.
 
 **Dashboard round (2026-11-20):** `feat(dashboard)` in the console's two branches adds the fork's
 statistics to the dashboard (see §1 item 4). Verified on the server VM after `install-openuem-fork.sh`
