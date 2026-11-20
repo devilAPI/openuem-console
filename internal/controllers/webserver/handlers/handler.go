@@ -64,12 +64,17 @@ type Handler struct {
 	CommonAppsJob        gocron.Job
 	EncryptionMasterKey  string
 
+	// Jobs of the scheduled tasks of the Deploy section, and the mutex that
+	// protects the map from the concurrent requests that manage them
+	scheduledEventJobs map[int]gocron.Job
+	scheduledEventMu   sync.Mutex
+
 	AvailableUpdatesJob gocron.Job
 	// AvailableUpdates is how many software updates every computer needed the last time
 	// the console asked, keyed by agent id, see StartAvailableUpdatesJob
 	AvailableUpdates map[string]agentUpdates
 
-	availableUpdatesMu          sync.RWMutex
+	availableUpdatesMu         sync.RWMutex
 	refreshingAvailableUpdates atomic.Bool
 }
 
@@ -87,6 +92,7 @@ func NewHandler(model *models.Model, natsServers string, s *sessions.SessionMana
 
 	h := Handler{
 		Model:                model,
+		scheduledEventJobs:   map[int]gocron.Job{},
 		SessionManager:       s,
 		JWTKey:               jwtKey,
 		CertPath:             certPath,
@@ -126,6 +132,9 @@ func NewHandler(model *models.Model, natsServers string, s *sessions.SessionMana
 	if err := h.StartAvailableUpdatesJob(); err != nil {
 		log.Printf("[ERROR]: could not start the software updates statistic job, reason: %v", err)
 	}
+
+	// Register the scheduled tasks defined in the Deploy section
+	h.StartScheduledEventsJob()
 
 	return &h
 }
