@@ -180,6 +180,12 @@ The server install script patches them in. The `openuem-certs` container regener
   4. the state is kept in `winget_source.json` next to the agent, only after success, so winget doesn't run every 30 minutes.
 - **Install scope:** the agent installs with `winget install --scope machine`, so every manifest declares machine scope.
 
+**Fork agent published as a winget package (`install-openuem-fork.sh`):**
+
+- The fork agent has no self-update subscription (`agent.update.<uuid>` is upstream-only). Update servers releases can't roll over the fork agents, and the console's "Update agents" action doesn't reach them either (their JetStream consumer doesn't include the subject). No auto-update, and no risk of being overwritten by the official agent.
+- That is why the setup program is published into the private winget repository after every agent build: `OpenUEM.AgentFork`, version read from `openuem-agent/internal/commands/report/version.go`, installer type `inno` with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` switches, arch `x64`, written directly to `<install dir>/winget-repository/OpenUEM.AgentFork/<version>/` **without a tenant id**, so it is global: every organization sees it in Deploy → Install and can install or upgrade the agent like any other package (`winget install OpenUEM.AgentFork`).
+- The repository directory is bind-mounted into the console and read live, so the console doesn't need a restart; the package catalog sync (every 30 min at startup) makes it searchable.
+
 ### 3.3 Install scripts (`install-script` branch)
 
 **Server** (`install-openuem-fork.sh`, run as root on Debian 13):

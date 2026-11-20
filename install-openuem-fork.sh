@@ -630,6 +630,40 @@ DOCKERFILE_EOF
     install -m 600 "$setup_exe" "$AGENTS_DIR/windows-amd64/openuem-agent-fork-setup.exe"
     rm -rf "$SETUP_BUILD" "$INNO_IMAGE_DIR"
 
+    # --------------------------------------------------------------------
+    # Publish the setup program in the console's private winget repository,
+    # globally (every organization can install it). The repository directory is
+    # bind-mounted into the console and read live, so no restart is needed; the
+    # package catalog is synchronized periodically. Agents without this setup
+    # can be upgraded with: winget install OpenUEM.AgentFork (also update)
+    #
+    # The fork agent has no self-update, so this is the way to upgrade it.
+    # --------------------------------------------------------------------
+    AGENT_VERSION="$(sed -n 's/^const VERSION = "\(.*\)".*/\1/p' "$INSTALL_DIR/src/openuem-agent/internal/commands/report/version.go" | head -n1)"
+    [ -n "$AGENT_VERSION" ] || AGENT_VERSION="0.0.0"
+    PKG_DIR="$INSTALL_DIR/winget-repository/OpenUEM.AgentFork/$AGENT_VERSION"
+    PKG_FILE="openuem-agent-fork-setup-$AGENT_VERSION.exe"
+    mkdir -p "$PKG_DIR"
+    install -m 600 "$AGENTS_DIR/windows-amd64/openuem-agent-fork-setup.exe" "$PKG_DIR/$PKG_FILE"
+    PKG_SHA256="$(sha256sum "$PKG_DIR/$PKG_FILE" | cut -d" " -f1 | tr "a-f" "A-F")"
+    PKG_SIZE="$(stat -c%s "$PKG_DIR/$PKG_FILE")"
+    cat >"$PKG_DIR/package.json" <<JSON_EOF
+{
+  "packageIdentifier": "OpenUEM.AgentFork",
+  "packageVersion": "$AGENT_VERSION",
+  "packageName": "OpenUEM Agent (fork)",
+  "publisher": "OpenUEM fork",
+  "installerType": "inno",
+  "silentSwitches": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
+  "architecture": "x64",
+  "installerFile": "$PKG_FILE",
+  "installerSha256": "$PKG_SHA256",
+  "size": $PKG_SIZE,
+  "uploaded": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON_EOF
+    info "Published OpenUEM.AgentFork $AGENT_VERSION in the private winget repository (every organization can install and upgrade the agent with winget)"
+
     # ------------------------------------------------------------------------
     # Linux installer: install-openuem-agent-fork.sh with the certificates, the
     # agents (amd64, arm64), the official .deb packages (amd64, arm64) and the
