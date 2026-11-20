@@ -8,7 +8,7 @@ pull request.
 |---|---|
 | `HANDOFF.md` | This document |
 | `TEST_PLAN.md` | The Windows test plan with the results of the VM test run (2026-11-18) |
-| `pr/*.md` | Pull request descriptions (nats, cert-manager, agent, console, worker) and the feature request issue (`issue.md`) |
+| `pr/*.md` | Pull request descriptions (nats, cert-manager, agent, console, worker; `scheduler-pr.md` for the scheduler) and the feature request issues (`issue.md`, `scheduler-issue.md`) |
 | `worker-patches/*.patch` | The openuem-worker commits as patches (the fork's `software-updates` branch has them too) |
 | `../install-openuem-fork.sh` | Installs or updates the server (Debian 13, Docker) with the fork |
 | `../install-openuem-agent-fork.ps1` | Installs or updates the fork's agent on Windows |
@@ -38,6 +38,13 @@ Upstream OpenUEM could only update one package on one computer at a time. The fo
    - **every pie chart card shows a tooltip** when it's hovered (`Chart` in `chart.templ`, the `charts.tip_*` keys), explaining what the chart is based on.
    - the software library packages by installer type pie **was removed again** (2026-11-20) on request.
    - **Computers by last software update run.** Like the update status page, the console asks every agent (except the waiting ones) `agent.listpackageupdates` with `{"statusonly":true}` (20 s page render at the most, concurrency 16, 5 s per agent) and classifies it: finished without failures, with failures, running, never ran an update, or no answer (offline or an agent without support). Without a NATS connection every computer counts as not answering.
+6. **Scheduled tasks** (Deploy → Scheduled tasks). Tasks the console runs automatically against every enabled and admitted computer of the organization (or one site):
+   - **Types:** update all software (queued in JetStream like the manual action, so offline computers run when they connect), power off, restart, Wake on LAN.
+   - **Schedules:** daily, weekly or monthly at a time of day, or any standard cron expression — recurring; or a date and time in the future — only once, interpreted in the console's local time. The server re-validates: cron expressions with `robfig/cron`, one-time dates in the future.
+   - **The list:** schedule, next run, last run and result (failed in red) per task, enable/disable, run now (async, the result is recorded when it finishes), edit (frequency prefilled), delete with a confirm. Untracked and manageable only from its own scope, like everything in Deploy.
+   - **Persistence:** a new ent entity (`scheduled_event`); the console registers the jobs of enabled events from the database at startup, so tasks survive restarts. One-time tasks are disabled and unregistered after their run; a one-time task whose date passed is disabled instead of run. Jobs run in gocron singleton mode.
+   - The schema addition will be contributed to `open-uem/ent`; until then the branches pin `github.com/devilAPI/ent` with a `replace`.
+   - **User behavior:** the codes exist in all seven locales; result summaries are stored in English because jobs run without a request locale.
 5. **Smaller fixes along the way:**
    - the console Dockerfile (Go toolchain, `$GOPATH`) and the worker Dockerfile;
    - the Homebrew type check;
@@ -55,7 +62,9 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 | Branch | Role |
 |---|---|
 | `feature/bulk-software-updates` | Development history. **The install scripts build these**, so this is what runs on the test server. |
-| `software-updates` | **PR branches**: one squashed commit per feature step, on top of upstream `main`. Fixes are cherry-picked here from the feature branch. Their tree equals the feature branch apart from the `go.mod`/`go.sum` pins. |
+| `software-updates` | **PR branch** (#499), squashed (2026-11-20) from one commit per feature step into three commits (features, fixes, dashboard), on top of upstream `main`. Its tree is unchanged.
+| `scheduled-tasks` | **PR branch** for the scheduler (item 6): three commits on top of `software-updates`' tree plus the cherry-picked scheduler commit of the feature branch. |
+| `scheduled-events` (ent repo) | The `scheduled_event` schema on a fork of `open-uem/ent` (`devilAPI/ent`), to be contributed upstream. |
 | `remove-task-uploads` | Removal of the MSI task upload (item 3). **Merged** into the feature branches and added as a commit to the PR branches; the branch can be deleted. |
 | `install-script` (console repo only) | Install scripts and this handoff |
 
@@ -65,7 +74,9 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
 |---|---|---|---|
 | nats | `d9b855a` | `b3a4794` | #24 |
 | openuem-agent | `a53b63b` | `2487602` | #216 |
-| openuem-console | `7dd965d` | `83ca839` | #499 (issue #498) |
+| openuem-console | `5c6a762` | `d9e1794` (squash of 25 commits) | #499 (issue #498) |
+| openuem-console `scheduled-tasks` | – | `37923c4` | scheduler, not opened yet (issue draft in `pr/scheduler-issue.md`) |
+| openuem-ent | – | `1b23ef3` (`scheduled-events`) | schema addition, not opened yet |
 | openuem-cert-manager | – | `626b464` | #17 |
 | openuem-worker | – | `826d9d0` | not opened yet |
 | install-script (console repo) | | this commit | – |
@@ -92,30 +103,15 @@ All forks are under `github.com/devilAPI/`. Upstream is `github.com/open-uem/`, 
   - `649d568` failed uninstalls reported as failed (upstream bug)
   - `fbb9dfb` queued requests no longer dropped because a later run started
   - `2487602` package ids validated for flatpak and Homebrew
-- **console:**
-  - `c62c336` bulk updates, update status, MSI uploads for tasks
-  - `99763b4` private winget repository
-  - `2dc50cb` repository served on the console port
-  - `c27d686` EXE and MSIX
-  - `61ebb9f` profile tasks can use library packages
-  - `61192ae` no version in derived package identifiers
-  - `1aeb5f7` EXE test data that `.gitignore` left out
-  - `fb60764` search results list every version of a package
-  - `5ccda5a` other organizations' library packages hidden from the searches
-  - `a4be997` no contact details in derived package identifiers
-  - `86bc5f1` task search offers the packages of the profile's organization
-  - `c7e7325` removes the MSI uploads for tasks
-  - `39c7d64` an install reuses the package's deployment, duplicates merged (upstream bug)
-  - `57cecf1` MSI headers checked before parsing (a crafted file crashed the console)
-  - `50e7127` an identifier belongs to one organization; safe replace; crash leftovers removed
-  - `cd13893` library identifiers can't take over community identifiers
-  - `96f158e` package pickers without values in hyperscript (upstream sink)
-  - `be35d00` installer URLs from the registered base URL (reverse proxies)
-  - `d2f0be1` concurrent install requests saved one at a time
-  - `1030b44` no second queued request while one is waiting
-  - `a5964e1` dashboard statistics of the fork's features (`2e6852d` on the feature branch; deployments by status, library by installer type, computers by last update run; translations in all seven locales)
-  - `99cf825` the software library's packages are found and marked (OpenUEM badge) on the computer pages' Deploy SW search and deployments (`c34ca37` on the feature branch)
-  - `83ca839` the updates-needed pie replaces the installer type pie, chart tooltips, and the needs-updates counter; the console counts the needed updates hourly (`0e9b68a` + `7dd965d` on the feature branch)
+- **console:** `software-updates` was squashed into three commits (2026-11-20) with identical content:
+  - `ad4cf63` features: software library (MSI/EXE/MSIX, REST source, profiles integration, MSI task uploads removed) and bulk software updates with the update status page
+  - `a3a02bf` fixes: identifiers per organization and safe replacement, MSI header check, URLs behind reverse proxies, organization scoping of searches, deployment reuse, one queued run at a time, hyperscript sink
+  - `d9e1794` dashboard statistics of the fork's features (deployments by status, library packages found and marked with the OpenUEM badge, updates-needed pie with tooltips and the needs-updates counter)
+  - the same steps exist per-feature-commit in the history of the feature branch; the dashboard commits there are `a5964e1`…`7dd965d` and the scheduler is `5c6a762`
+- **console `scheduled-tasks`** (scheduler PR branch):
+  - `37923c4` scheduled tasks (cron and one-time, four task types, persistence with the devilAPI/ent pin) — equals `5c6a762` of the feature branch
+- **ent (devilAPI/ent, `scheduled-events`):**
+  - `1b23ef3` the `scheduled_event` schema (cron/when, enabled, last run/result, tenant edge required, optional site edge with cascade delete)
 - **worker:**
   - `c6980f8` profile tasks use the source `OpenUEM` for library packages
   - `826d9d0` Dockerfile fix
@@ -131,6 +127,8 @@ The agent and console use `replace github.com/open-uem/nats => github.com/devilA
 
 Both nats commits have the same tree. Once the nats PR is merged upstream, drop the `replace` and `go get github.com/open-uem/nats@<merged commit>`.
 
+The console's scheduler also uses `replace github.com/open-uem/ent => github.com/devilAPI/ent v0.0.0-20261120111527-1b23ef397c05` (both the feature branch and `scheduled-tasks`): the `scheduled_event` schema isn't upstream yet. Once the open-uem/ent PR is merged, drop the `replace` and `go get github.com/open-uem/ent@<merged commit>`. `go mod tidy` removes some old `open-uem/ent` lines from `go.sum` while the replace is active — that is expected and stays.
+
 `go.sum` is kept minimal on purpose: don't commit the churn from `go mod tidy` (it removes unrelated upstream lines).
 
 ### 2.5 Merge order upstream
@@ -142,6 +140,11 @@ Both nats commits have the same tree. Once the nats PR is merged upstream, drop 
 5. worker
 
 The worker only reads the catalog that the console fills.
+
+The scheduler PR depends on its own pieces, besides the console PR #499:
+
+1. `open-uem/ent`: the `scheduled_event` schema (until then: the `devilAPI/ent` pin)
+2. console `scheduled-tasks` (issue draft in `pr/scheduler-issue.md`, PR body in `pr/scheduler-pr.md`)
 
 ## 3. How it works
 
