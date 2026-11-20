@@ -26,6 +26,24 @@ type SystemUpdate struct {
 	SiteID             int
 }
 
+// UpdateRunStatusCounts classifies the agents of an organization by the result of their
+// last software update run, it's filled in by the console's dashboard with the live
+// status answers of the agents
+type UpdateRunStatusCounts struct {
+	// Finished is the number of agents whose last run ended without failures
+	Finished int
+	// Failed is the number of agents whose last run ended with an error or with
+	// at least one package that failed to update
+	Failed int
+	// Running is the number of agents that are running an update right now
+	Running int
+	// Never is the number of reachable agents that never ran an update
+	Never int
+	// Unreachable is the number of agents that didn't answer, they are offline or
+	// their version doesn't support software updates
+	Unreachable int
+}
+
 func mainUpdatesQuery(s *sql.Selector, p partials.PaginationAndSort) {
 	// Info from agents waiting for admission won't be shown
 	s.Select(sql.As(agent.FieldID, "ID"), agent.FieldNickname, agent.FieldOs, systemupdate.FieldSystemUpdateStatus, systemupdate.FieldLastInstall, systemupdate.FieldLastSearch, systemupdate.FieldPendingUpdates).

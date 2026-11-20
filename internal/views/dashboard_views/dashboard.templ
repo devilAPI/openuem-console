@@ -11,11 +11,14 @@ import (
 )
 
 type DashboardCharts struct {
-	AgentByOs           render.ChartSnippet
-	AgentByOsVersion    render.ChartSnippet
-	AgentBySystemUpdate render.ChartSnippet
-	AgentByLastReport   render.ChartSnippet
-	Top10Apps           render.ChartSnippet
+	AgentByOs                  render.ChartSnippet
+	AgentByOsVersion           render.ChartSnippet
+	AgentBySystemUpdate        render.ChartSnippet
+	AgentByLastReport          render.ChartSnippet
+	Top10Apps                  render.ChartSnippet
+	DeploymentsByStatus        render.ChartSnippet
+	LibraryPackagesByInstaller render.ChartSnippet
+	AgentByUpdateRun           render.ChartSnippet
 }
 
 type DashboardData struct {
@@ -33,6 +36,7 @@ type DashboardData struct {
 	NWaitingForAdmission       int
 	NApps                      int
 	NDeployments               int
+	NLibraryPackages           int
 	NOpenUEMUsers              int
 	NSessions                  int
 	NUsernames                 int
@@ -58,6 +62,13 @@ templ Dashboard(c echo.Context, data DashboardData, commonInfo *partials.CommonI
 					@Chart("Agents By OS", "Agent distribution by operating system", data.Charts.AgentByOs)
 				</div>
 				@Chart("Agents By OS Version", "Agent distribution by operating system version", data.Charts.AgentByOsVersion)
+			</div>
+			<div class="flex justify-between gap-2 mt-4">
+				@Chart("Deployments By Status", "Software deployment distribution by install status", data.Charts.DeploymentsByStatus)
+				<div class="hidden 2xl:block">
+					@Chart("Software Library By Installer Type", "Software library package distribution by installer type", data.Charts.LibraryPackagesByInstaller)
+				</div>
+				@Chart("Computers By Last Software Update Run", "Computer distribution by the result of their last software update run", data.Charts.AgentByUpdateRun)
 			</div>
 			<div class="flex justify-end">
 				@partials.RefreshPage(commonInfo.Translator, data.RefreshTime, true)
@@ -282,6 +293,21 @@ templ Dashboard(c echo.Context, data DashboardData, commonInfo *partials.CommonI
 							<th class="!align-middle">{ i18n.T(ctx, "dashboard.num_deployments") }</th>
 							<td class="!align-middle text-center">
 								{ strconv.Itoa(data.NDeployments) }
+							</td>
+						</tr>
+						<tr>
+							<th class="!align-middle">{ i18n.T(ctx, "dashboard.num_library_packages") }</th>
+							<td class="!align-middle text-center">
+								<a
+									href={ templ.URL(partials.GetNavigationUrl(commonInfo, "/deploy/library")) }
+									hx-get={ string(templ.URL(partials.GetNavigationUrl(commonInfo, "/deploy/library"))) }
+									hx-target="#main"
+									hx-swap="outerHTML"
+									hx-push-url="true"
+									class="uk-text-bold underline"
+								>
+									{ strconv.Itoa(data.NLibraryPackages) }
+								</a>
 							</td>
 						</tr>
 						<tr>
