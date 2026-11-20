@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 	"github.com/open-uem/openuem-console/internal/views/partials"
 	"github.com/robfig/cron/v3"
 )
+
+// How often the leader reconciles the jobs of the scheduled tasks with the
+// database, so tasks created or edited while it was busy are picked up
+const scheduledEventsReconcileInterval = 1 * time.Minute
 
 // scheduledCronPatterns maps the cron expressions the form builds with the
 // frequency they belong to, so a task can be edited with its frequency again
@@ -40,8 +45,52 @@ type ScheduledEventData struct {
 	When        *time.Time
 }
 
-// StartScheduledEventsJob registers the enabled events found in the database
-// so their jobs survive a console restart. Called once when the console starts.
+// EnableScheduledEventsJobs starts running the scheduled tasks: the console
+// instance that wins the NATS leader election registers the job of every
+// enabled event, and a reconciliation job keeps the registrations in sync, so
+// tasks created or edited while the leader was busy (or by a follower instance)
+// are picked up within a minute. It runs in the election's OnPromote callback.
+func (h *Handler) EnableScheduledEventsJobs() {
+	h.scheduledEventMu.Lock()
+	h.scheduledEventsLeader = true
+	h.scheduledEventMu.Unlock()
+
+	h.StartScheduledEventsJob()
+
+	if job, err := h.TaskScheduler.NewJob(
+		gocron.DurationJob(scheduledEventsReconcileInterval),
+		gocron.NewTask(func() { h.StartScheduledEventsJob() }),
+	); err != nil {
+		log.Printf("[ERROR]: could not start the scheduled tasks reconciliation job, reason: %v", err)
+	} else {
+		h.scheduledEventMu.Lock()
+		h.scheduledEventsReconcileJob = job
+		h.scheduledEventMu.Unlock()
+	}
+}
+
+// DisableScheduledEventsJobs stops running the scheduled tasks: callbacks and
+// jobs are unregistered by the election's OnDemote (and jobs of events deleted
+// meanwhile are gone together with them)
+func (h *Handler) DisableScheduledEventsJobs() {
+	h.scheduledEventMu.Lock()
+	defer h.scheduledEventMu.Unlock()
+
+	h.scheduledEventsLeader = false
+	if h.scheduledEventsReconcileJob != nil {
+		if err := h.TaskScheduler.RemoveJob(h.scheduledEventsReconcileJob.ID()); err != nil {
+			log.Printf("[ERROR]: could not remove the scheduled tasks reconciliation job, reason: %v", err)
+		}
+		h.scheduledEventsReconcileJob = nil
+	}
+	for eventID := range h.scheduledEventJobs {
+		h.UnregisterScheduledEvent(eventID)
+	}
+}
+
+// StartScheduledEventsJob registers the enabled events found in the database,
+// unregistering stale jobs first. The leader runs it at startup, after it is
+// promoted, and once a minute afterwards.
 func (h *Handler) StartScheduledEventsJob() {
 	events, err := h.Model.GetEnabledScheduledEvents()
 	if err != nil {
@@ -51,10 +100,6 @@ func (h *Handler) StartScheduledEventsJob() {
 
 	for _, event := range events {
 		h.RegisterScheduledEvent(event)
-	}
-
-	if len(events) > 0 {
-		log.Printf("[INFO]: %d scheduled task(s) have been registered", len(events))
 	}
 }
 
@@ -66,8 +111,16 @@ func (h *Handler) RegisterScheduledEvent(event *ent.ScheduledEvent) {
 	h.scheduledEventMu.Lock()
 	defer h.scheduledEventMu.Unlock()
 
+	// Only the elected leader runs scheduled tasks: every replica would run
+	// them once otherwise. Followers keep the task in the database only; the
+	// leader reconciles from there
+	if !h.scheduledEventsLeader {
+		return
+	}
+
 	// A job may already exist for this event, e.g. after editing it
 	h.UnregisterScheduledEvent(event.ID)
+	delete(h.scheduledEventRunning, event.ID)
 
 	var definition gocron.JobDefinition
 	var options []gocron.JobOption
@@ -138,6 +191,22 @@ func (h *Handler) ScheduledEventNextRun(eventID int) *time.Time {
 // scheduler, without a request context, so the summary stored in the database is
 // always written in English.
 func (h *Handler) RunScheduledEvent(eventID int) {
+	// A run that is still going on must not start a second one, e.g. the run
+	// now button while the scheduler's job of the same task is firing
+	h.scheduledEventMu.Lock()
+	if h.scheduledEventRunning[eventID] {
+		h.scheduledEventMu.Unlock()
+		log.Printf("[INFO]: the scheduled task %d runs already, so this request does nothing", eventID)
+		return
+	}
+	h.scheduledEventRunning[eventID] = true
+	h.scheduledEventMu.Unlock()
+	defer func() {
+		h.scheduledEventMu.Lock()
+		delete(h.scheduledEventRunning, eventID)
+		h.scheduledEventMu.Unlock()
+	}()
+
 	event, err := h.Model.GetScheduledEvent(eventID)
 	if err != nil {
 		log.Printf("[ERROR]: could not get the scheduled task %d, reason: %v", eventID, err)
@@ -155,7 +224,9 @@ func (h *Handler) RunScheduledEvent(eventID int) {
 
 	agents, err := h.Model.GetScheduledEventAgents(tenantID, siteID)
 	if err != nil {
-		h.Model.SetScheduledEventResult(event.ID, true, fmt.Sprintf("Could not get the computers of the organization, reason: %v", err))
+		if err := h.Model.SetScheduledEventResult(event.ID, true, fmt.Sprintf("Could not get the computers of the organization, reason: %v", err)); err != nil {
+			log.Printf("[ERROR]: could not record the failed run of the scheduled task %d, reason: %v", event.ID, err)
+		}
 		h.finishScheduledEvent(event)
 		return
 	}
@@ -175,7 +246,9 @@ func (h *Handler) RunScheduledEvent(eventID int) {
 		failed, summary = true, fmt.Sprintf("Unknown task type %q", event.Type)
 	}
 
-	h.Model.SetScheduledEventResult(event.ID, failed, summary)
+	if err := h.Model.SetScheduledEventResult(event.ID, failed, summary); err != nil {
+		log.Printf("[ERROR]: could not record the run of the scheduled task %d, reason: %v", event.ID, err)
+	}
 	h.finishScheduledEvent(event)
 }
 
@@ -245,19 +318,18 @@ func (h *Handler) runScheduledPowerAction(agents []*ent.Agent, action string) (b
 		return true, "The console was not connected to the messaging server, so no computer could be asked to " + action
 	}
 
+	// Both actions expect a RebootOrRestart message and no date, because the
+	// schedule has already fired: the agent must act right now. The subject is
+	// the one the console uses for the per-computer actions, so an agent always
+	// answers it: a restart reboots the machine (not the agent service)
 	subject := "agent.poweroff."
 	if action == "restart" {
-		subject = "agent.restart."
+		subject = "agent.reboot."
 	}
 
-	request := []byte{}
-	if action == "poweroff" {
-		// No date: the agent must power off right now, its schedule has already fired
-		data, err := json.Marshal(openuem_nats.RebootOrRestart{})
-		if err != nil {
-			return true, fmt.Sprintf("Could not prepare the power off request, reason: %v", err)
-		}
-		request = data
+	request, err := json.Marshal(openuem_nats.RebootOrRestart{})
+	if err != nil {
+		return true, fmt.Sprintf("Could not prepare the request, reason: %v", err)
 	}
 
 	asked, failures := 0, 0
@@ -512,7 +584,13 @@ func (h *Handler) ToggleScheduledEvent(c echo.Context) error {
 
 	if enable {
 		h.RegisterScheduledEvent(event)
-		return h.renderScheduledEvents(c, i18n.T(c.Request().Context(), "scheduled.enabled"))
+
+		// A one-time task scheduled in the past is disabled again by
+		// registering it, so say what really happened
+		if refreshed, err := h.Model.GetScheduledEvent(id); err == nil && refreshed.Enabled {
+			return h.renderScheduledEvents(c, i18n.T(c.Request().Context(), "scheduled.enabled"))
+		}
+		return h.renderScheduledEvents(c, i18n.T(c.Request().Context(), "scheduled.disabled"))
 	}
 
 	h.scheduledEventMu.Lock()
@@ -619,9 +697,12 @@ func (h *Handler) parseScheduledEventForm(c echo.Context) (ScheduledEventData, e
 	data := ScheduledEventData{}
 	ctx := c.Request().Context()
 
-	data.Description = c.FormValue("description")
+	data.Description = strings.TrimSpace(c.FormValue("description"))
 	if data.Description == "" {
 		return data, errors.New(i18n.T(ctx, "scheduled.no_description"))
+	}
+	if len(data.Description) > 250 {
+		return data, errors.New(i18n.T(ctx, "scheduled.wrong_description"))
 	}
 
 	data.Type = c.FormValue("type")
@@ -668,8 +749,14 @@ func (h *Handler) parseScheduledEventForm(c echo.Context) (ScheduledEventData, e
 		data.Cron = fmt.Sprintf("%d %d %d * *", minute, hour, monthday)
 	case deploy_views.FrequencyCustom:
 		data.Cron = c.FormValue("cron")
-		if _, err := cron.ParseStandard(data.Cron); err != nil {
+		schedule, err := cron.ParseStandard(data.Cron)
+		if err != nil {
 			return data, errors.New(i18n.T(ctx, "scheduled.wrong_cron", err.Error()))
+		}
+		// A valid expression can still never fire, e.g. "0 0 31 2 *": there is
+		// no February 31st. The task would be saved and quietly do nothing
+		if nextFire := schedule.Next(time.Now()); nextFire.IsZero() {
+			return data, errors.New(i18n.T(ctx, "scheduled.cron_never_fires"))
 		}
 	default:
 		return data, errors.New(i18n.T(ctx, "scheduled.wrong_frequency"))

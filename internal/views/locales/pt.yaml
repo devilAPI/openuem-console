@@ -599,6 +599,8 @@ pt:
     wrong_id: "A tarefa agendada não existe"
     wrong_schedule: "O agendamento não é válido: %s"
     no_description: "Escreve primeiro uma descrição da tarefa"
+    wrong_description: "A descrição é demasiado longa, mantém-na abaixo de 250 caracteres"
+    cron_never_fires: "Esta expressão cron nunca dispara, p. ex. um dia do mês que o mês escolhido não tem"
     wrong_type: "Escolhe uma tarefa"
     could_not_parse_time: "Escreve a hora no formato HH:MM"
     when_past: "A data e hora de uma tarefa que só é executada uma vez têm de ser no futuro"

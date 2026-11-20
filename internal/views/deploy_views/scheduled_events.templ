@@ -276,12 +276,12 @@ templ ScheduledEventForm(c echo.Context, event *ent.ScheduledEvent, frequency st
 									name="frequency"
 									required
 									_="on change
-										hide #schedule-once then hide #schedule-time then hide #schedule-weekday then hide #schedule-monthday then hide #schedule-cron
-										if my.value == 'once' then show #schedule-once
-										if my.value == 'daily' then show #schedule-time
-										if my.value == 'weekly' then show #schedule-time then show #schedule-weekday
-										if my.value == 'monthly' then show #schedule-time then show #schedule-monthday
-										if my.value == 'custom' then show #schedule-cron"
+										add .hidden to #schedule-once then add .hidden to #schedule-time then add .hidden to #schedule-weekday then add .hidden to #schedule-monthday then add .hidden to #schedule-cron
+										if my.value == 'once' then remove .hidden from #schedule-once
+										if my.value == 'daily' then remove .hidden from #schedule-time
+										if my.value == 'weekly' then remove .hidden from #schedule-time then remove .hidden from #schedule-weekday
+										if my.value == 'monthly' then remove .hidden from #schedule-time then remove .hidden from #schedule-monthday
+										if my.value == 'custom' then remove .hidden from #schedule-cron"
 								>
 									for _, f := range []string{FrequencyOnce, FrequencyDaily, FrequencyWeekly, FrequencyMonthly, FrequencyCustom} {
 										<option value={ f } selected={ frequency == f }>{ i18n.T(ctx, "scheduled.frequency_"+f) }</option>

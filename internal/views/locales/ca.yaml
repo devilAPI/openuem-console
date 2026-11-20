@@ -599,6 +599,8 @@ ca:
     wrong_id: "La tasca programada no existeix"
     wrong_schedule: "La programació no és vàlida: %s"
     no_description: "Escriu primer una descripció de la tasca"
+    wrong_description: "La descripció és massa llarga, mantén-la per sota de 250 caràcters"
+    cron_never_fires: "Aquesta expressió cron mai s'executarà, p. ex. un dia del mes que el mes triat no té"
     wrong_type: "Tria una tasca"
     could_not_parse_time: "Escriu l'hora en format HH:MM"
     when_past: "La data i hora d'una tasca que s'executa només una vegada ha de ser en el futur"

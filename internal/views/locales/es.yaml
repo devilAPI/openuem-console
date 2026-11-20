@@ -599,6 +599,8 @@ es:
     wrong_id: "La tarea programada no existe"
     wrong_schedule: "La programación no es válida: %s"
     no_description: "Escribe primero una descripción de la tarea"
+    wrong_description: "La descripción es demasiado larga, mantenla por debajo de 250 caracteres"
+    cron_never_fires: "Esta expresión cron nunca se ejecuta, p. ej. un día del mes que el mes elegido no tiene"
     wrong_type: "Elige una tarea"
     could_not_parse_time: "Escribe la hora en formato HH:MM"
     when_past: "La fecha y hora de una tarea que se ejecuta solo una vez debe estar en el futuro"

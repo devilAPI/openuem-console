@@ -599,6 +599,8 @@ de:
     wrong_id: "Die geplante Aufgabe existiert nicht"
     wrong_schedule: "Der Zeitplan ist ungültig: %s"
     no_description: "Schreibe zuerst eine Beschreibung der Aufgabe"
+    wrong_description: "Die Beschreibung ist zu lang, halte sie unter 250 Zeichen"
+    cron_never_fires: "Dieser Cron-Ausdruck löst nie aus, z. B. ein Tag des Monats, den der gewählte Monat nicht hat"
     wrong_type: "Wähle eine Aufgabe"
     could_not_parse_time: "Gib die Uhrzeit im Format HH:MM ein"
     when_past: "Datum und Uhrzeit einer einmaligen Aufgabe müssen in der Zukunft liegen"

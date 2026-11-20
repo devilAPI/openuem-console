@@ -599,6 +599,8 @@ no:
     wrong_id: "Den planlagte oppgaven finnes ikke"
     wrong_schedule: "Tidsplanen er ikke gyldig: %s"
     no_description: "Skriv først en beskrivelse av oppgaven"
+    wrong_description: "Beskrivelsen er for lang, hold den under 250 tegn"
+    cron_never_fires: "Dette cron-uttrykket utløses aldri, f.eks. en dag i måneden som valgt måned ikke har"
     wrong_type: "Velg en oppgave"
     could_not_parse_time: "Skriv klokkeslettet i formatet HH:MM"
     when_past: "Datoen og klokkeslettet for en oppgave som bare kjører én gang, må være i fremtiden"
